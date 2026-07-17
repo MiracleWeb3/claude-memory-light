@@ -1,12 +1,53 @@
-# claude-memory-light
+<div align="center">
 
-Full session memory for Claude Code. One small Rust binary. No daemons, no LLM calls.
+<img src="https://capsule-render.vercel.app/api?type=waving&height=180&color=gradient&customColorList=12&text=claude-memory-light&fontSize=44&fontColor=ffffff&animation=fadeIn&fontAlignY=36&desc=full%20memory%20for%20Claude%20Code&descSize=18&descAlignY=56" width="100%" alt=""/>
 
-Claude Code already writes a transcript of every session to `~/.claude/projects/`. Most memory plugins ignore that file and rebuild capture from scratch: lifecycle hooks feeding a background worker, a vector database, summarization calls billed to your token budget. I didn't want to pay tokens to remember my own conversations, so this tool skips capture and indexes what is already on disk.
+<img src="assets/logo.svg" width="150" alt="cml logo"/>
 
-`cml` puts every transcript, your memory notes, and a personal wiki into one SQLite FTS5 database. A search returns in milliseconds and costs nothing. A Stop hook keeps the index fresh; the incremental pass takes about 17 ms on my 4-core laptop. First full index of 50 sessions took 2 seconds.
+<br/>
 
-## install
+<img src="https://readme-typing-svg.demolab.com/?font=Fira+Code&size=17&pause=1400&center=true&vCenter=true&width=560&color=EA580C&lines=your+Claude+already+wrote+everything+down;index+it%2C+don't+re-capture+it;0+tokens+·+0+daemons+·+1+small+Rust+binary" alt=""/>
+
+<br/>
+
+[![build](https://img.shields.io/github/actions/workflow/status/MiracleWeb3/claude-memory-light/release.yml?style=for-the-badge&logo=githubactions&logoColor=white&label=build)](https://github.com/MiracleWeb3/claude-memory-light/actions)
+[![release](https://img.shields.io/github/v/release/MiracleWeb3/claude-memory-light?style=for-the-badge&logo=github&color=ea580c)](https://github.com/MiracleWeb3/claude-memory-light/releases)
+[![license](https://img.shields.io/github/license/MiracleWeb3/claude-memory-light?style=for-the-badge&color=blue)](LICENSE)
+[![rust](https://img.shields.io/badge/rust-stable-b7410e?style=for-the-badge&logo=rust)](https://www.rust-lang.org/)
+
+![binary](https://img.shields.io/badge/binary-2.4_MB-success?style=flat-square)
+![llm calls](https://img.shields.io/badge/LLM_calls-0-success?style=flat-square)
+![daemons](https://img.shields.io/badge/daemons-0-success?style=flat-square)
+![platforms](https://img.shields.io/badge/linux-✓-blue?style=flat-square&logo=linux&logoColor=white)
+![platforms](https://img.shields.io/badge/macos-✓-blue?style=flat-square&logo=apple&logoColor=white)
+
+**[install](#-install)** · **[use](#-use)** · **[how it works](#%EF%B8%8F-how-it-works)** · **[learning loop](#-the-learning-loop)** · **[wiki](#-the-wiki)** · **[vs claude-mem](#%EF%B8%8F-vs-claude-mem)** · **[cli](#-cli)** · **[faq](#-faq)**
+
+</div>
+
+---
+
+> [!IMPORTANT]
+> Claude Code already writes a transcript of every session to `~/.claude/projects/`. Most memory plugins ignore that file and rebuild capture from scratch: lifecycle hooks feeding a background worker, a vector database, summarization calls billed to your token budget. This tool skips capture and indexes what is already on disk.
+
+<div align="center">
+<img src="assets/demo.svg" width="880" alt="cml search demo"/>
+</div>
+
+The second hit in that demo is real. The first thing this tool found on my machine was a conversation I'd forgotten, where Claude and I had already evaluated a memory plugin two weeks earlier and reached the same conclusion. That sold me.
+
+## ✨ features
+
+|   |   |
+|---|---|
+| 🔍 **full-history search** | every message of every session, ranked FTS5, results in milliseconds |
+| 🧠 **learning loop** | per-turn signals collected into an inbox, consolidated into memory Claude actually loads |
+| 📖 **personal wiki** | one markdown page per topic, edited in place, Obsidian-compatible, same index |
+| 🪶 **nothing running** | binary executes on a hook, exits in ms; RAM at rest is zero |
+| 🔒 **local only** | one SQLite file you own; nothing leaves your machine |
+| 🧩 **graph companion** | `cml doctor` auto-detects graphify for code-structure maps |
+
+## 🚀 install
 
 ```
 /plugin marketplace add MiracleWeb3/claude-memory-light
@@ -16,78 +57,171 @@ Claude Code already writes a transcript of every session to `~/.claude/projects/
 The plugin fetches a prebuilt binary on first run, or builds with cargo if you have Rust. Then:
 
 ```bash
-cml index --all
-cml doctor
+cml index --all   # first full index: 50 sessions ≈ 2 s
+cml doctor        # sanity check
 ```
 
-One setting worth changing: Claude Code deletes transcripts after about 30 days by default. Set `"cleanupPeriodDays": 3650` in `~/.claude/settings.json` or your memory has an expiry date.
+> [!WARNING]
+> Claude Code deletes transcripts after about 30 days by default. Set `"cleanupPeriodDays": 3650` in `~/.claude/settings.json` or your memory has an expiry date.
 
-## use
+## 💻 use
 
 ```bash
-cml search "wireguard cyprus"
+cml search "wireguard cyprus"                # across ALL sessions, memory notes, wiki
 cml search parser --project myapp --limit 20
-cml search deploy --role wiki
+cml search deploy --role wiki                # only curated wiki pages
 ```
-
-```
-2026-07-08 assistant home     29c3e5e3 | … Brave still sends all [rezka] traffic to the old, now-dead address …
-2026-07-05 user      parserx  cda63721 | … my honest verdict: [claude-mem] is a good tool, but for us …
-```
-
-The second hit up there is real. The first thing this tool found on my machine was a conversation I'd forgotten, where Claude and I had already evaluated a memory plugin two weeks earlier and reached the same conclusion. That sold me.
 
 Three bundled skills teach Claude to search memory before re-solving old problems, to consolidate learning signals when they pile up, and to keep the wiki current. You don't run anything by hand.
 
-## the learning loop
+> [!TIP]
+> No hits doesn't mean not found. Try a second and third keyword set: synonyms, error text, filenames. The skill teaches Claude to do exactly that before giving up.
+
+## ⚙️ how it works
+
+```mermaid
+flowchart LR
+    A["Claude Code<br/>sessions"] -->|"writes transcripts<br/>(already happens)"| B["~/.claude/projects/<br/>**/*.jsonl"]
+    B -->|"Stop hook<br/>cml index · 17 ms"| C[("SQLite FTS5<br/>index.db")]
+    D["memory notes<br/>*.md"] --> C
+    E["wiki pages<br/>*.md"] --> C
+    C -->|"cml search · 0 tokens"| F["Claude<br/>recalls"]
+    A -->|"Stop hook<br/>cml capture"| G["inbox/<br/>&lt;project&gt;.md"]
+    G -->|"SessionStart<br/>cml nudge · ≥5 signals"| H["consolidation →<br/>memory files"]
+    style C fill:#ea580c,color:#fff
+```
+
+<details>
+<summary><b>📁 where everything lives</b></summary>
+
+```
+~/.claude/claude-memory-light/
+├── index.db          # the FTS5 index (disposable, rebuilds in seconds)
+├── inbox/            # learning-loop signals, one file per project
+│   └── myapp.md
+├── wiki/             # your wiki pages
+│   └── topic.md
+└── bin/cml           # the binary (installed by the bootstrap)
+```
+
+Transcripts stay where Claude Code puts them. `cml` never moves or modifies them.
+
+</details>
+
+## 🔁 the learning loop
 
 A Stop hook appends your message from each turn to a per-project inbox file, flagged when it reads like a correction. At session start, once five or more signals accumulate, Claude gets a note telling it to distill them into its persistent memory and clear the inbox. The hooks contain no LLM calls. The distillation happens inside a session you were going to run anyway, where the full context already lives.
 
-## the wiki
+## 📖 the wiki
 
-A folder of markdown files at `~/.claude/claude-memory-light/wiki/`, one page per topic, edited in place when facts change. Old states aren't lost; the transcripts keep them. Obsidian opens the folder as a vault. `cml search <topic> --role wiki` finds pages, and the bundled skill keeps Claude writing them.
+A folder of markdown files, one page per topic, edited in place when facts change. Old states aren't lost; the transcripts keep them. Obsidian opens the folder as a vault. `cml search <topic> --role wiki` finds pages, and the bundled skill keeps Claude writing them.
 
-## when it breaks
+## 🛡️ when it breaks
 
-There is no worker process to die. `capture` and `nudge` exit 0 on every code path, including total failure, so a broken install degrades to "no memory" instead of "no Claude". The index is disposable:
+There is no worker process to die. `capture` and `nudge` exit 0 on every code path, including total failure, so a broken install degrades to "no memory" instead of "no Claude".
 
-```bash
-rm ~/.claude/claude-memory-light/index.db*
-cml index --all
-```
+> [!NOTE]
+> The index is disposable. Transcripts are the source of truth, and everything rebuilds from them in seconds:
+> ```bash
+> rm ~/.claude/claude-memory-light/index.db*
+> cml index --all
+> ```
 
-Transcripts are the source of truth. Everything else rebuilds from them in seconds.
-
-## why not claude-mem
+## ⚖️ vs claude-mem
 
 claude-mem is the popular one, and it works for plenty of people. It also runs a persistent Express worker on port 37777, needs Bun plus a Python vector database, and summarizes your session with LLM calls while you work. Users on Pro plans have burned a [full 5-hour token budget in under 10 messages](https://github.com/thedotmack/claude-mem/issues/618) with it enabled. When its worker dies, hooks have [locked up every prompt in the session](https://github.com/thedotmack/claude-mem/issues?q=worker+unreachable). I read that issue tracker for an afternoon and wrote this instead.
 
-|  | claude-memory-light | claude-mem |
-|---|---|---|
-| background processes | 0 | Express worker, port 37777 |
-| LLM calls per session | 0 | ~50 summarization calls |
-| runtimes | none | Bun, Node, Python/uv, Chroma |
-| RAM at rest | 0 | 50 MB and up; leak reports exist |
-| hook failure | exit 0, session unaffected | can block all prompts |
-| search | FTS5, keyword | FTS5 + vector |
+| | claude-memory-light | claude-mem |
+|---|:---:|:---:|
+| background processes | ✅ none | ❌ Express worker, port 37777 |
+| LLM calls per session | ✅ 0 | ❌ ~50 summarization calls |
+| extra runtimes | ✅ none | ❌ Bun + Node + Python/uv + Chroma |
+| RAM at rest | ✅ 0 | ❌ 50 MB and up, leak reports exist |
+| hook failure mode | ✅ exit 0, session unaffected | ❌ can block all prompts |
+| works on subscription plans | ✅ that's the point | ⚠️ author says hold off |
+| search | ⚠️ FTS5 keyword | ✅ FTS5 + vector |
 
-Vector search is the one real feature gap. FTS5 with Porter stemming has covered everything I've asked of it so far. If it stops being enough, sqlite-vec drops into the same database file without a daemon, and that's the planned path.
+Vector search is the one real feature gap. FTS5 with Porter stemming has covered everything I've asked of it so far. If it stops being enough, [sqlite-vec](https://github.com/asg017/sqlite-vec) drops into the same database file without a daemon, and that's the planned path.
 
-## cli
+## 🧰 cli
 
 | command | what it does |
 |---|---|
 | `cml index [--all]` | incremental (or full) reindex of transcripts, memory notes, wiki |
 | `cml search <terms> [--project P] [--role R] [--limit N]` | ranked search |
 | `cml stats` | row counts, DB size |
-| `cml doctor` | environment check |
-| `cml capture` | hook: append turn's user message to the learning inbox |
-| `cml nudge` | hook: consolidation reminder once signals pile up |
+| `cml doctor` | environment check, graphify detection |
+| `cml capture` | *(hook)* append turn's user message to the learning inbox |
+| `cml nudge` | *(hook)* consolidation reminder once signals pile up |
 
-`CML_HOME` moves the data directory (default `~/.claude/claude-memory-light`). `CML_NUDGE_THRESHOLD` tunes the nudge, default 5.
+<kbd>CML_HOME</kbd> moves the data directory (default `~/.claude/claude-memory-light`). <kbd>CML_NUDGE_THRESHOLD</kbd> tunes the nudge, default 5.
 
-Built with rusqlite (bundled SQLite) and serde_json. Nothing else.
+## ❓ faq
 
-## license
+<details>
+<summary><b>does my data leave the machine?</b></summary>
+<br/>
 
-[MIT](LICENSE)
+No. One SQLite file in your home directory. No cloud, no sync, no telemetry, no accounts.
+
+</details>
+
+<details>
+<summary><b>does it cost tokens?</b></summary>
+<br/>
+
+Zero. Indexing and search are pure SQLite. Nothing in the hook path calls a model. That's the reason this exists.
+
+</details>
+
+<details>
+<summary><b>what about semantic search?</b></summary>
+<br/>
+
+Planned as an opt-in via sqlite-vec, same database file, still no daemon. FTS5 with stemming gets further than you'd expect; try it before assuming you need embeddings.
+
+</details>
+
+<details>
+<summary><b>windows?</b></summary>
+<br/>
+
+Untested. The transcript format and Rust are portable, so it should be close. PRs welcome.
+
+</details>
+
+<details>
+<summary><b>how big does the index get?</b></summary>
+<br/>
+
+About 11 MB for 50 sessions / 4,000 messages on my machine. SQLite FTS5 handles orders of magnitude more without noticing.
+
+</details>
+
+## 🗺️ roadmap
+
+- [x] FTS5 index over transcripts, memory notes, wiki
+- [x] learning loop (capture + nudge)
+- [x] plugin packaging, prebuilt binaries
+- [ ] `sqlite-vec` semantic search, opt-in, same file, no daemon
+- [ ] optional end-of-session digests (batched, single call, opt-in)
+- [ ] windows support
+
+## ⭐ star history
+
+<div align="center">
+
+[![Star History Chart](https://api.star-history.com/svg?repos=MiracleWeb3/claude-memory-light&type=Date)](https://star-history.com/#MiracleWeb3/claude-memory-light&Date)
+
+</div>
+
+## 📄 license
+
+[MIT](LICENSE) © [MiracleWeb3](https://github.com/MiracleWeb3)
+
+<div align="center">
+<img src="https://capsule-render.vercel.app/api?type=waving&height=120&color=gradient&customColorList=12&section=footer" width="100%" alt=""/>
+
+**[⬆ back to top](#claude-memory-light)**
+
+</div>

@@ -1,0 +1,23 @@
+<svg width="920" height="400" viewBox="0 0 920 400" xmlns="http://www.w3.org/2000/svg" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="15">
+  <rect width="920" height="400" rx="12" fill="#0d1117" stroke="#30363d"/>
+  <rect width="920" height="40" rx="12" fill="#161b22"/>
+  <rect y="28" width="920" height="12" fill="#161b22"/>
+  <circle cx="24" cy="20" r="6" fill="#ff5f56"/>
+  <circle cx="46" cy="20" r="6" fill="#ffbd2e"/>
+  <circle cx="68" cy="20" r="6" fill="#27c93f"/>
+  <text x="400" y="25" fill="#8b949e" font-size="13">cml — memory that was already there</text>
+
+  <text x="24" y="76"><tspan fill="#7ee787">$</tspan> <tspan fill="#e6edf3">cml search "claude-mem verdict"</tspan></text>
+  <text x="24" y="104"><tspan fill="#79c0ff">2026-07-17</tspan> <tspan fill="#ffa657">assistant</tspan> <tspan fill="#8b949e">home     1531f69b | Verdict: No, skip </tspan><tspan fill="#f0883e">[claude-mem]</tspan><tspan fill="#8b949e">. Your instinct about the gap…</tspan></text>
+  <text x="24" y="130"><tspan fill="#79c0ff">2026-07-05</tspan> <tspan fill="#ffa657">assistant</tspan> <tspan fill="#8b949e">parserx  cda63721 | my honest </tspan><tspan fill="#f0883e">[verdict]</tspan><tspan fill="#8b949e">: claude-mem is a good tool, but…</tspan></text>
+
+  <text x="24" y="174"><tspan fill="#7ee787">$</tspan> <tspan fill="#e6edf3">cml search touchpad --limit 2</tspan></text>
+  <text x="24" y="202"><tspan fill="#79c0ff">2026-07-07</tspan> <tspan fill="#ffa657">assistant</tspan> <tspan fill="#8b949e">home     a55a82fa | That's drag lock, a </tspan><tspan fill="#f0883e">[touchpad]</tspan><tspan fill="#8b949e"> "feature" where…</tspan></text>
+  <text x="24" y="228"><tspan fill="#79c0ff">2026-07-05</tspan> <tspan fill="#ffa657">user     </tspan> <tspan fill="#8b949e">home     e240d5ce | …my finger off the </tspan><tspan fill="#f0883e">[touchpad]</tspan><tspan fill="#8b949e">, then i move finger…</tspan></text>
+
+  <text x="24" y="272"><tspan fill="#7ee787">$</tspan> <tspan fill="#e6edf3">cml stats</tspan></text>
+  <text x="24" y="300"><tspan fill="#e6edf3">4,068 rows </tspan><tspan fill="#8b949e">(assistant=2,981  user=972  memory=115) </tspan><tspan fill="#e6edf3">| 50 sessions | 10.8 MB</tspan></text>
+
+  <text x="24" y="344"><tspan fill="#7ee787">$</tspan> <tspan fill="#e6edf3">time cml index</tspan></text>
+  <text x="24" y="372"><tspan fill="#8b949e">indexed 1 file(s), 23 message(s)   </tspan><tspan fill="#7ee787">real 0m0.017s</tspan></text>
+</svg>
