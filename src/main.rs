@@ -226,46 +226,116 @@ fn index_transcripts(conn: &mut Connection, force: bool) -> R<(usize, usize)> {
                 params![pstr],
             );
             tx.execute("DELETE FROM mem WHERE file=?1", params![pstr])?;
+            // continued sessions leave overlapping rows across two transcript files —
+            // dedup against everything already indexed (this file's own rows just left)
+            let mut seen_keys: std::collections::HashSet<String> = {
+                let mut s = tx.prepare("SELECT session, ts, role, substr(text,1,64) FROM mem")?;
+                let set = s
+                    .query_map([], |r| {
+                        Ok(stable_key(
+                            &r.get::<_, String>(0)?,
+                            &r.get::<_, String>(1)?,
+                            &r.get::<_, String>(2)?,
+                            &r.get::<_, String>(3)?,
+                        ))
+                    })?
+                    .collect::<rusqlite::Result<std::collections::HashSet<_>>>()?;
+                set
+            };
             let reader = BufReader::new(fs::File::open(&path)?);
+            // Claude Code writes each content block as its own entry, so narration can't be
+            // spotted within one line. Two passes: parse the stream, then keep an assistant
+            // text only if NOTHING tool-related follows it before the next human message —
+            // that's the turn-final answer; everything else is "doing X now" narration.
+            enum K {
+                AText { text: String, ts: String, sid: String },
+                ATool,
+                UHuman { text: String, ts: String, sid: String },
+                UTool,
+                Summ { text: String },
+            }
+            let mut entries: Vec<K> = Vec::new();
+            for line in reader.lines() {
+                let Ok(line) = line else { continue };
+                let Ok(v) = serde_json::from_str::<Value>(&line) else {
+                    continue;
+                };
+                match v["type"].as_str() {
+                    Some("summary") => {
+                        let s = v["summary"].as_str().unwrap_or("").to_string();
+                        if !s.trim().is_empty() {
+                            entries.push(K::Summ { text: s });
+                        }
+                    }
+                    Some(t) if t == "user" || t == "assistant" => {
+                        if v["isSidechain"] == true {
+                            continue;
+                        }
+                        let content = &v["message"]["content"];
+                        let has = |kind: &str| {
+                            content
+                                .as_array()
+                                .map(|a| a.iter().any(|b| b["type"] == kind))
+                                .unwrap_or(false)
+                        };
+                        let text = text_of(content);
+                        let ts = v["timestamp"].as_str().unwrap_or("").to_string();
+                        let sid = v["sessionId"].as_str().unwrap_or(&session_fallback).to_string();
+                        if t == "assistant" {
+                            if has("tool_use") {
+                                entries.push(K::ATool);
+                            } else if !text.trim().is_empty() {
+                                entries.push(K::AText { text, ts, sid });
+                            }
+                        } else if has("tool_result") {
+                            entries.push(K::UTool);
+                        } else if !text.trim().is_empty() {
+                            entries.push(K::UHuman { text, ts, sid });
+                        }
+                    }
+                    _ => {}
+                }
+            }
             let mut n = 0usize;
             {
                 let mut ins = tx.prepare(
                     "INSERT INTO mem(text, role, project, session, ts, file) VALUES(?1,?2,?3,?4,?5,?6)",
                 )?;
-                for line in reader.lines() {
-                    let Ok(line) = line else { continue };
-                    let Ok(v) = serde_json::from_str::<Value>(&line) else {
-                        continue;
-                    };
-                    let (role, text, ts) = match v["type"].as_str() {
-                        Some("summary") => (
-                            "summary".to_string(),
-                            v["summary"].as_str().unwrap_or("").to_string(),
-                            String::new(),
-                        ),
-                        Some(t) if t == "user" || t == "assistant" => {
-                            if v["isSidechain"] == true {
+                let turn_final = |i: usize| -> bool {
+                    for e in &entries[i + 1..] {
+                        match e {
+                            K::AText { .. } => continue,
+                            K::ATool | K::UTool => return false,
+                            K::UHuman { .. } | K::Summ { .. } => return true,
+                        }
+                    }
+                    true
+                };
+                for (i, e) in entries.iter().enumerate() {
+                    let (role, text, ts, sid) = match e {
+                        K::Summ { text } => ("summary", text.as_str(), "", session_fallback.as_str()),
+                        K::UHuman { text, ts, sid } => ("user", text.as_str(), ts.as_str(), sid.as_str()),
+                        K::AText { text, ts, sid } => {
+                            if !turn_final(i) {
                                 continue;
                             }
-                            (
-                                t.to_string(),
-                                text_of(&v["message"]["content"]),
-                                v["timestamp"].as_str().unwrap_or("").to_string(),
-                            )
+                            ("assistant", text.as_str(), ts.as_str(), sid.as_str())
                         }
                         _ => continue,
                     };
-                    if is_noise(&text) {
+                    if is_noise(text) {
                         continue;
                     }
-                    // signal floor: short assistant rows are mode-acks and "Done." echoes,
-                    // not memory. User words stay unless truly empty ("ok").
+                    // signal floor: short assistant rows are mode-acks, not memory
                     let tl = text.trim().chars().count();
                     if (role == "assistant" && tl < 80) || tl < 4 {
                         continue;
                     }
-                    let sid = v["sessionId"].as_str().unwrap_or(&session_fallback);
-                    if !blocked.is_empty() && blocked.contains(&stable_key(sid, &ts, &role, &text)) {
+                    let key = stable_key(sid, ts, role, text);
+                    if !blocked.is_empty() && blocked.contains(&key) {
+                        continue;
+                    }
+                    if !seen_keys.insert(key) {
                         continue;
                     }
                     ins.execute(params![text, role, project, sid, ts, pstr])?;
@@ -409,9 +479,10 @@ fn search(args: &[String]) -> R<()> {
     } else {
         let q = terms
             .iter()
+            .flat_map(|t| t.split_whitespace())
             .map(|t| format!("\"{}\"", t.replace('"', "\"\"")))
             .collect::<Vec<_>>()
-            .join(" ");
+            .join(" AND ");
         let mut stmt =
             conn.prepare("SELECT rowid FROM mem WHERE mem MATCH ?1 ORDER BY rank LIMIT 60")?;
         let ids: Vec<i64> = stmt
@@ -1048,7 +1119,7 @@ fn forget(args: &[String]) -> R<()> {
             .split_whitespace()
             .map(|t| format!("\"{}\"", t.replace('"', "\"\"")))
             .collect::<Vec<_>>()
-            .join(" ");
+            .join(" AND ");
         let mut stmt = conn.prepare(
             "SELECT rowid, role, project, ts, substr(text,1,90) FROM mem WHERE mem MATCH ?1 ORDER BY rowid",
         )?;
