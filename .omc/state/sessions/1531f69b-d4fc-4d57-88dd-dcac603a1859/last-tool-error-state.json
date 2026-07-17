@@ -1,7 +1,0 @@
-{
-  "tool_name": "Bash",
-  "tool_input_preview": "{\"command\":\"cd ~/dev/business/black/telegram-bots/parserx && set -a && . ./.vps.env && set +a && K=$(sshpass -p \\\"$VPS_PASS\\\" ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 \\\"$VPS_USER@$...",
-  "error": "Exit code 1",
-  "timestamp": "2026-07-17T21:14:05.568Z",
-  "retry_count": 4
-}
