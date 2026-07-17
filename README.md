@@ -248,3 +248,20 @@ About 11 MB for 50 sessions / 4,000 messages on my machine. SQLite FTS5 handles 
 **[⬆ back to top](#claude-memory-light)**
 
 </div>
+
+## bring your own curator
+
+The optional distillation layer speaks to any OpenAI-compatible `/chat/completions` endpoint. Drop an API key into `~/.claude/claude-memory-light/llm.key` and it activates; two env vars point it anywhere:
+
+```bash
+# DeepSeek (default — nothing to configure but the key)
+CML_LLM_URL=https://api.deepseek.com/chat/completions   CML_LLM_MODEL=deepseek-v4-pro
+
+# OpenRouter — any model on the router
+CML_LLM_URL=https://openrouter.ai/api/v1/chat/completions   CML_LLM_MODEL=deepseek/deepseek-chat
+
+# GLM / Zhipu
+CML_LLM_URL=https://open.bigmodel.cn/api/paas/v4/chat/completions   CML_LLM_MODEL=glm-4-flash
+```
+
+No key, no calls — the curator is off by default and the brain stays fully local.

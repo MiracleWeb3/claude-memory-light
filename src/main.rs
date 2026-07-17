@@ -434,7 +434,7 @@ fn index(force: bool) -> R<()> {
     // automatic curation: judge new rows when a DeepSeek key is configured (capped
     // so the Stop hook stays quick; backlog drains over turns or via `cml distill`)
     let mut curated = String::new();
-    if let Some(key) = deepseek_key() {
+    if let Some(key) = llm_key() {
         if let Ok((k, d)) = distill_new(&conn, &key, Some(40), false) {
             if k + d > 0 {
                 curated = format!(", curated {k}+{d}dropped");
@@ -1113,15 +1113,40 @@ fn map(args: &[String]) -> R<()> {
 
 // ---------- distill: DeepSeek judges what deserves memory; junk gets forgotten ----------
 
-fn deepseek_key() -> Option<String> {
-    fs::read_to_string(data_dir().join("deepseek.key"))
+/// Curator credentials/endpoint — bring your own provider. Any OpenAI-compatible
+/// /chat/completions works: DeepSeek, OpenRouter, GLM, local llama.cpp, whatever.
+fn llm_key() -> Option<String> {
+    env::var("CML_LLM_KEY")
         .ok()
-        .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
+        .or_else(|| {
+            for f in ["llm.key", "deepseek.key"] {
+                if let Ok(s) = fs::read_to_string(data_dir().join(f)) {
+                    let s = s.trim().to_string();
+                    if !s.is_empty() {
+                        return Some(s);
+                    }
+                }
+            }
+            None
+        })
         .or_else(|| env::var("DEEPSEEK_API_KEY").ok().filter(|s| !s.is_empty()))
 }
 
 const DISTILL_MODEL: &str = "deepseek-v4-pro";
+
+fn llm_conf() -> (String, String) {
+    (
+        env::var("CML_LLM_URL")
+            .ok()
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| "https://api.deepseek.com/chat/completions".into()),
+        env::var("CML_LLM_MODEL")
+            .ok()
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| DISTILL_MODEL.into()),
+    )
+}
 
 /// One curl call judging a batch of rows. Returns (id, keep, gist) verdicts.
 fn judge_batch(key: &str, rows: &[(i64, String)]) -> R<Vec<(i64, bool, String)>> {
@@ -1129,8 +1154,9 @@ fn judge_batch(key: &str, rows: &[(i64, String)]) -> R<Vec<(i64, bool, String)>>
         .iter()
         .map(|(id, text)| json!({"id": id, "text": text}))
         .collect();
+    let (url, model) = llm_conf();
     let req = json!({
-        "model": DISTILL_MODEL,
+        "model": model,
         "response_format": {"type": "json_object"},
         "temperature": 0.0,
         "messages": [
@@ -1146,7 +1172,7 @@ fn judge_batch(key: &str, rows: &[(i64, String)]) -> R<Vec<(i64, bool, String)>>
             "-H", "Content-Type: application/json",
             "-H", &format!("Authorization: Bearer {key}"),
             "-d", &format!("@{}", tmp.display()),
-            "https://api.deepseek.com/chat/completions",
+            &url,
         ])
         .output()?;
     let _ = fs::remove_file(&tmp);
@@ -1267,15 +1293,16 @@ fn distill_new(conn: &Connection, key: &str, cap: Option<usize>, verbose: bool) 
 }
 
 fn distill_cmd(_args: &[String]) -> R<()> {
-    let Some(key) = deepseek_key() else {
+    let Some(key) = llm_key() else {
         return Err("no DeepSeek key — put it in ~/.claude/claude-memory-light/deepseek.key or DEEPSEEK_API_KEY".into());
     };
     let conn = open_db()?;
     let t0 = std::time::Instant::now();
     let (kept, dropped) = distill_new(&conn, &key, None, true)?;
     println!(
-        "distilled: kept {kept}, dropped {dropped} in {:.0}s ({DISTILL_MODEL}); dropped rows are blocklisted (undo: cml forget --clear)",
-        t0.elapsed().as_secs_f32()
+        "distilled: kept {kept}, dropped {dropped} in {:.0}s ({}); dropped rows are blocklisted (undo: cml forget --clear)",
+        t0.elapsed().as_secs_f32(),
+        llm_conf().1
     );
     Ok(())
 }
@@ -1411,9 +1438,12 @@ fn doctor() -> R<()> {
         let conn = open_db()?;
         let dn: i64 = conn.query_row("SELECT count(*) FROM distilled", [], |r| r.get(0)).unwrap_or(0);
         let fg: i64 = conn.query_row("SELECT count(*) FROM forgotten", [], |r| r.get(0)).unwrap_or(0);
-        match deepseek_key() {
-            Some(_) => println!("curation        : on ({DISTILL_MODEL}) — {dn} judged kept, {fg} forgotten"),
-            None => println!("curation        : off — put a key in ~/.claude/claude-memory-light/deepseek.key"),
+        match llm_key() {
+            Some(_) => {
+                let (u, m) = llm_conf();
+                println!("curation        : on ({m} @ {}) — {dn} judged kept, {fg} forgotten", u.split('/').nth(2).unwrap_or("?"));
+            }
+            None => println!("curation        : off — put a key in ~/.claude/claude-memory-light/llm.key (any OpenAI-compatible provider; CML_LLM_URL / CML_LLM_MODEL to configure)"),
         }
     }
     println!("hint: keep transcripts forever with \"cleanupPeriodDays\": 3650 in ~/.claude/settings.json");
