@@ -1160,7 +1160,7 @@ fn judge_batch(key: &str, rows: &[(i64, String)]) -> R<Vec<(i64, bool, String)>>
         "response_format": {"type": "json_object"},
         "temperature": 0.0,
         "messages": [
-            {"role": "system", "content": "You curate a developer's AI-assistant conversation history into long-term memory. For each row decide keep or drop.\nKEEP (keep=true): decisions with their reasons, solutions and fixes, technical knowledge, user preferences or corrections, outcomes with numbers, how-things-work explanations.\nDROP (keep=false): status narration (doing X now, blocked on Y, waiting for Z, walking it once more), progress-only reports, acknowledgments, process chatter with nothing reusable.\nFor kept rows add gist: the reusable essence in at most 120 characters.\nReply ONLY with JSON: {\"verdicts\":[{\"id\":<id>,\"keep\":true|false,\"gist\":\"...\"}]}"},
+            {"role": "system", "content": "You curate a developer's AI-assistant conversation history into long-term memory. Be strict. Keep a row ONLY if it would be a useful ANSWER when the developer searches their memory weeks later. When in doubt, DROP.\nKEEP (keep=true): a root cause or diagnosis; a decision WITH its reasoning; an explanation of how something works; a non-obvious gotcha or finding; a real measurement or benchmark result; a user preference or correction being recorded.\nDROP (keep=false): completion and status confirmations — 'Done', 'Fixed', 'Pushed', 'Shipped', 'Set X to Y', 'Applied', 'Installed', 'here is what I did' — EVEN when they name a specific value or number; progress narration ('doing X now', 'blocked on Y', 'walking it once more'); acknowledgments; and any restatement of an action just performed. A value that was merely applied belongs in a settings note, not memory.\nThe test: does the row TEACH something reusable, or just CONFIRM a chore is finished? Confirmation, however detailed, is DROP.\nFor kept rows add gist: the reusable essence in at most 120 characters.\nReply ONLY with JSON: {\"verdicts\":[{\"id\":<id>,\"keep\":true|false,\"gist\":\"...\"}]}"},
             {"role": "user", "content": serde_json::to_string(&json!({"rows": items}))?}
         ]
     });
@@ -1292,11 +1292,15 @@ fn distill_new(conn: &Connection, key: &str, cap: Option<usize>, verbose: bool) 
     Ok((kept, dropped))
 }
 
-fn distill_cmd(_args: &[String]) -> R<()> {
+fn distill_cmd(args: &[String]) -> R<()> {
     let Some(key) = llm_key() else {
-        return Err("no DeepSeek key — put it in ~/.claude/claude-memory-light/deepseek.key or DEEPSEEK_API_KEY".into());
+        return Err("no curator key — put one in ~/.claude/claude-memory-light/llm.key (or set CML_LLM_KEY)".into());
     };
     let conn = open_db()?;
+    if args.iter().any(|a| a == "--all") {
+        let n = conn.execute("DELETE FROM distilled", [])?;
+        println!("re-judging every row from scratch ({n} prior verdicts cleared)");
+    }
     let t0 = std::time::Instant::now();
     let (kept, dropped) = distill_new(&conn, &key, None, true)?;
     println!(
@@ -1493,7 +1497,7 @@ fn main() {
         Some("forget") => forget(&args[1..]),
         Some("distill") => distill_cmd(&args[1..]),
         _ => Err(
-            "usage: cml index [--all] | search <terms> [--project P] [--role R] [--limit N] [--semantic|--keyword] | forget <rowid...> | forget --match \"<q>\" [--yes] | distill | embed [--all] | map [--limit N] [--no-open] | stats | doctor | capture | nudge"
+            "usage: cml index [--all] | search <terms> [--project P] [--role R] [--limit N] [--semantic|--keyword] | forget <rowid...> | forget --match \"<q>\" [--yes] | distill [--all] | embed [--all] | map [--limit N] [--no-open] | stats | doctor | capture | nudge"
                 .into(),
         ),
     };
