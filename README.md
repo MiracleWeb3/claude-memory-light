@@ -211,7 +211,7 @@ About 11 MB for 50 sessions / 4,000 messages on my machine. SQLite FTS5 handles 
 
 <div align="center">
 
-[![Star History Chart](https://api.star-history.com/svg?repos=MiracleWeb3/claude-memory-light&type=Date)](https://star-history.com/#MiracleWeb3/claude-memory-light&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=miracleweb3%2Fclaude-memory-light&type=Date)](https://star-history.com/#MiracleWeb3/claude-memory-light&Date)
 
 </div>
 
