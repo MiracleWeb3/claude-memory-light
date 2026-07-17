@@ -258,6 +258,12 @@ fn index_transcripts(conn: &mut Connection, force: bool) -> R<(usize, usize)> {
                     if is_noise(&text) {
                         continue;
                     }
+                    // signal floor: short assistant rows are mode-acks and "Done." echoes,
+                    // not memory. User words stay unless truly empty ("ok").
+                    let tl = text.trim().chars().count();
+                    if (role == "assistant" && tl < 80) || tl < 4 {
+                        continue;
+                    }
                     let sid = v["sessionId"].as_str().unwrap_or(&session_fallback);
                     if !blocked.is_empty() && blocked.contains(&stable_key(sid, &ts, &role, &text)) {
                         continue;
