@@ -6,7 +6,7 @@
 
 <br/>
 
-<img src="https://readme-typing-svg.demolab.com/?font=Fira+Code&size=17&pause=1400&center=true&vCenter=true&width=560&color=EA580C&lines=your+Claude+already+wrote+everything+down;index+it%2C+don't+re-capture+it;0+tokens+·+0+daemons+·+1+small+Rust+binary" alt=""/>
+<img src="https://readme-typing-svg.demolab.com/?font=Fira+Code&size=17&pause=1400&center=true&vCenter=true&width=560&color=EA580C&lines=every+session+becomes+a+star;your+memory%2C+mapped+like+a+galaxy;0+tokens+·+0+daemons+·+1+small+Rust+binary" alt=""/>
 
 <br/>
 
@@ -21,7 +21,7 @@
 ![platforms](https://img.shields.io/badge/linux-✓-blue?style=flat-square&logo=linux&logoColor=white)
 ![platforms](https://img.shields.io/badge/macos-✓-blue?style=flat-square&logo=apple&logoColor=white)
 
-**[install](#-install)** · **[use](#-use)** · **[how it works](#%EF%B8%8F-how-it-works)** · **[learning loop](#-the-learning-loop)** · **[wiki](#-the-wiki)** · **[vs claude-mem](#%EF%B8%8F-vs-claude-mem)** · **[cli](#-cli)** · **[faq](#-faq)**
+**[install](#-install)** · **[use](#-use)** · **[the map](#-the-map)** · **[how it works](#-how-it-works)** · **[learning loop](#-the-learning-loop)** · **[wiki](#-the-wiki)** · **[vs claude-mem](#%EF%B8%8F-vs-claude-mem)** · **[cli](#-cli)** · **[faq](#-faq)**
 
 </div>
 
@@ -31,10 +31,11 @@
 > Claude Code already writes a transcript of every session to `~/.claude/projects/`. Most memory plugins ignore that file and rebuild capture from scratch: lifecycle hooks feeding a background worker, a vector database, summarization calls billed to your token budget. This tool skips capture and indexes what is already on disk.
 
 <div align="center">
-<img src="assets/demo.svg" width="880" alt="cml search demo"/>
+<img src="assets/map.png" width="880" alt="the 3D memory map — every message a star"/>
+<br/><sub>4,100 messages from 51 sessions, photographed with <code>cml map</code>. Green galaxy: curated memory notes linked by wikilinks. Cyan: the code graph.</sub>
 </div>
 
-The second hit in that demo is real. The first thing this tool found on my machine was a conversation I'd forgotten, where Claude and I had already evaluated a memory plugin two weeks earlier and reached the same conclusion. That sold me.
+The second hit in the demo below is real. The first thing this tool found on my machine was a conversation I'd forgotten, where Claude and I had already evaluated a memory plugin two weeks earlier and reached the same conclusion. That sold me.
 
 ## ✨ features
 
@@ -65,7 +66,7 @@ cml doctor        # sanity check
 > [!WARNING]
 > Claude Code deletes transcripts after about 30 days by default. Set `"cleanupPeriodDays": 3650` in `~/.claude/settings.json` or your memory has an expiry date.
 
-## 💻 use
+## 🔭 use
 
 ```bash
 cml search "wireguard cyprus"                # across ALL sessions, memory notes, wiki
@@ -73,24 +74,22 @@ cml search parser --project myapp --limit 20
 cml search deploy --role wiki                # only curated wiki pages
 ```
 
+<div align="center">
+<img src="assets/demo.svg" width="880" alt="cml search demo"/>
+</div>
+
 Three bundled skills teach Claude to search memory before re-solving old problems, to consolidate learning signals when they pile up, and to keep the wiki current. You don't run anything by hand.
 
 > [!TIP]
 > No hits doesn't mean not found. Try a second and third keyword set: synonyms, error text, filenames. The skill teaches Claude to do exactly that before giving up.
 
-## ⚙️ how it works
+## 🪐 how it works
 
-```mermaid
-flowchart LR
-    A["Claude Code<br/>sessions"] -->|"writes transcripts<br/>(already happens)"| B["~/.claude/projects/<br/>**/*.jsonl"]
-    B -->|"Stop hook<br/>cml index · 17 ms"| C[("SQLite FTS5<br/>index.db")]
-    D["memory notes<br/>*.md"] --> C
-    E["wiki pages<br/>*.md"] --> C
-    C -->|"cml search · 0 tokens"| F["Claude<br/>recalls"]
-    A -->|"Stop hook<br/>cml capture"| G["inbox/<br/>&lt;project&gt;.md"]
-    G -->|"SessionStart<br/>cml nudge · ≥5 signals"| H["consolidation →<br/>memory files"]
-    style C fill:#ea580c,color:#fff
-```
+Everything orbits one SQLite file. Sources feed it, hooks keep it fresh, search beams out of it.
+
+<div align="center">
+<img src="assets/architecture.svg" width="880" alt="orbital architecture"/>
+</div>
 
 <details>
 <summary><b>📁 where everything lives</b></summary>
@@ -123,11 +122,9 @@ A folder of markdown files, one page per topic, edited in place when facts chang
 cml map          # builds and opens it
 ```
 
-<div align="center">
-<img src="assets/map.png" width="880" alt="3D memory map"/>
-</div>
-
 Your entire memory as a 3D force graph: projects orbit the center, sessions cluster around projects, every message is a particle colored by role. Memory notes and wiki pages link to each other through their `[[wikilinks]]`, so the curated layer renders like Obsidian's graph view, except in three dimensions and sitting next to the conversations it came from. Search flies the camera to matches, chips filter by role, clicking a node shows the text and the `cml search` command to pull it in a terminal.
+
+And if the repo you're standing in has a graphify knowledge graph, the map picks it up on its own: `graphify-out/graph.json` renders as a cyan code constellation next to your conversations — functions, files, and concepts in the same space as the sessions that wrote them. `--code <path>` points it anywhere, `--no-code` turns it off.
 
 One static HTML file with the render engine vendored in. Works offline, no CDN, no server. Generating 4,000+ nodes takes well under a second.
 
@@ -164,7 +161,7 @@ Vector search is the one real feature gap. FTS5 with Porter stemming has covered
 |---|---|
 | `cml index [--all]` | incremental (or full) reindex of transcripts, memory notes, wiki |
 | `cml search <terms> [--project P] [--role R] [--limit N]` | ranked search |
-| `cml map [--limit N] [--no-open]` | build + open the 3D memory map |
+| `cml map [--limit N] [--code G] [--no-code] [--no-open]` | build + open the 3D memory map |
 | `cml stats` | row counts, DB size |
 | `cml doctor` | environment check, graphify detection |
 | `cml capture` | *(hook)* append turn's user message to the learning inbox |
@@ -220,7 +217,7 @@ About 11 MB for 50 sessions / 4,000 messages on my machine. SQLite FTS5 handles 
 - [x] learning loop (capture + nudge)
 - [x] plugin packaging, prebuilt binaries
 - [x] 3d memory map with wikilink edges, offline, single file
-- [ ] code-graph layer: ingest graphify's `graph.json` into the map when present
+- [x] code-graph layer: graphify's `graph.json` renders in the same map
 - [ ] `sqlite-vec` semantic search, opt-in, same file, no daemon
 - [ ] optional end-of-session digests (batched, single call, opt-in)
 - [ ] windows support
