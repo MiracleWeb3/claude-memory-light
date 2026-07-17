@@ -43,6 +43,7 @@ The second hit in that demo is real. The first thing this tool found on my machi
 | 🔍 **full-history search** | every message of every session, ranked FTS5, results in milliseconds |
 | 🧠 **learning loop** | per-turn signals collected into an inbox, consolidated into memory Claude actually loads |
 | 📖 **personal wiki** | one markdown page per topic, edited in place, Obsidian-compatible, same index |
+| 🌌 **3d memory map** | `cml map` renders your whole memory as an interactive galaxy — one offline HTML file |
 | 🪶 **nothing running** | binary executes on a hook, exits in ms; RAM at rest is zero |
 | 🔒 **local only** | one SQLite file you own; nothing leaves your machine |
 | 🧩 **graph companion** | `cml doctor` auto-detects graphify for code-structure maps |
@@ -116,6 +117,20 @@ A Stop hook appends your message from each turn to a per-project inbox file, fla
 
 A folder of markdown files, one page per topic, edited in place when facts change. Old states aren't lost; the transcripts keep them. Obsidian opens the folder as a vault. `cml search <topic> --role wiki` finds pages, and the bundled skill keeps Claude writing them.
 
+## 🌌 the map
+
+```bash
+cml map          # builds and opens it
+```
+
+<div align="center">
+<img src="assets/map.png" width="880" alt="3D memory map"/>
+</div>
+
+Your entire memory as a 3D force graph: projects orbit the center, sessions cluster around projects, every message is a particle colored by role. Memory notes and wiki pages link to each other through their `[[wikilinks]]`, so the curated layer renders like Obsidian's graph view, except in three dimensions and sitting next to the conversations it came from. Search flies the camera to matches, chips filter by role, clicking a node shows the text and the `cml search` command to pull it in a terminal.
+
+One static HTML file with the render engine vendored in. Works offline, no CDN, no server. Generating 4,000+ nodes takes well under a second.
+
 ## 🛡️ when it breaks
 
 There is no worker process to die. `capture` and `nudge` exit 0 on every code path, including total failure, so a broken install degrades to "no memory" instead of "no Claude".
@@ -149,6 +164,7 @@ Vector search is the one real feature gap. FTS5 with Porter stemming has covered
 |---|---|
 | `cml index [--all]` | incremental (or full) reindex of transcripts, memory notes, wiki |
 | `cml search <terms> [--project P] [--role R] [--limit N]` | ranked search |
+| `cml map [--limit N] [--no-open]` | build + open the 3D memory map |
 | `cml stats` | row counts, DB size |
 | `cml doctor` | environment check, graphify detection |
 | `cml capture` | *(hook)* append turn's user message to the learning inbox |
@@ -203,6 +219,8 @@ About 11 MB for 50 sessions / 4,000 messages on my machine. SQLite FTS5 handles 
 - [x] FTS5 index over transcripts, memory notes, wiki
 - [x] learning loop (capture + nudge)
 - [x] plugin packaging, prebuilt binaries
+- [x] 3d memory map with wikilink edges, offline, single file
+- [ ] code-graph layer: ingest graphify's `graph.json` into the map when present
 - [ ] `sqlite-vec` semantic search, opt-in, same file, no daemon
 - [ ] optional end-of-session digests (batched, single call, opt-in)
 - [ ] windows support

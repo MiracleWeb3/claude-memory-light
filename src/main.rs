@@ -505,6 +505,140 @@ fn nudge() {
     }
 }
 
+// ---------- map: 3D memory visualization, one static HTML file, no server ----------
+
+/// Extract [[wikilink]] target names, lowercased. No regex dep needed.
+fn wikilinks(text: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut rest = text;
+    while let Some(a) = rest.find("[[") {
+        rest = &rest[a + 2..];
+        match rest.find("]]") {
+            Some(b) => {
+                let name = rest[..b].trim().to_lowercase();
+                if !name.is_empty() && name.len() < 100 {
+                    out.push(name);
+                }
+                rest = &rest[b + 2..];
+            }
+            None => break,
+        }
+    }
+    out
+}
+
+fn map(args: &[String]) -> R<()> {
+    let mut limit = 6000usize;
+    let mut open = true;
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--limit" => {
+                i += 1;
+                limit = args.get(i).and_then(|s| s.parse().ok()).unwrap_or(6000);
+            }
+            "--no-open" => open = false,
+            _ => {}
+        }
+        i += 1;
+    }
+    let conn = open_db()?;
+    let mut nodes: Vec<Value> =
+        vec![json!({"id":"center","group":"center","label":"memory","val":34})];
+    let mut links: Vec<Value> = Vec::new();
+    let mut seen_p = std::collections::HashSet::new();
+    let mut seen_s = std::collections::HashSet::new();
+    let mut note_ids: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    let mut pending_wikilinks: Vec<(String, Vec<String>)> = Vec::new();
+    let mut stmt = conn.prepare(
+        "SELECT rowid, role, project, session, ts, text FROM mem ORDER BY rowid DESC LIMIT ?1",
+    )?;
+    let mut rows = stmt.query(params![limit as i64])?;
+    let mut n_msgs = 0usize;
+    while let Some(r) = rows.next()? {
+        let rowid: i64 = r.get(0)?;
+        let role: String = r.get(1)?;
+        let project: String = r.get(2)?;
+        let session: String = r.get(3)?;
+        let ts: String = r.get(4)?;
+        let text: String = r.get(5)?;
+        let snip: String = text.chars().take(180).collect();
+        let date: String = if ts.len() >= 10 {
+            ts.chars().take(10).collect()
+        } else {
+            String::new()
+        };
+        let sess8: String = session.chars().take(8).collect();
+        let pid = format!("p:{project}");
+        if seen_p.insert(project.clone()) {
+            nodes.push(json!({"id":pid,"group":"project","label":project,"val":16}));
+            links.push(json!({"source":"center","target":pid,"kind":"spine"}));
+        }
+        let mid = format!("m:{rowid}");
+        let parent = if role == "memory" {
+            pid.clone()
+        } else if role == "wiki" {
+            "center".to_string()
+        } else {
+            let sid = format!("s:{session}");
+            if seen_s.insert(sid.clone()) {
+                nodes.push(json!({"id":sid,"group":"session","label":sess8,"val":7}));
+                links.push(json!({"source":pid,"target":sid,"kind":"spine"}));
+            }
+            sid
+        };
+        nodes.push(json!({
+            "id": mid, "group": role, "label": date, "snippet": snip,
+            "project": project, "session": sess8, "ts": date,
+            "val": if role == "memory" || role == "wiki" { 5.0 } else { 1.6 }
+        }));
+        links.push(json!({"source":parent,"target":mid,"kind":"leaf"}));
+        if role == "memory" || role == "wiki" {
+            note_ids.insert(session.to_lowercase(), mid.clone());
+            let found = wikilinks(&text);
+            if !found.is_empty() {
+                pending_wikilinks.push((mid, found));
+            }
+        }
+        n_msgs += 1;
+    }
+    for (from, targets) in pending_wikilinks {
+        for name in targets {
+            if let Some(to) = note_ids.get(&name) {
+                if to != &from {
+                    links.push(json!({"source":from,"target":to,"kind":"wikilink"}));
+                }
+            }
+        }
+    }
+    let n_nodes = nodes.len();
+    let n_links = links.len();
+    let db = data_dir().join("index.db");
+    let db_mb = fs::metadata(&db)
+        .map(|m| format!("{:.1}", m.len() as f64 / 1e6))
+        .unwrap_or_else(|_| "?".into());
+    let data = json!({
+        "nodes": nodes, "links": links,
+        "stats": {"rows": n_msgs, "sessions": seen_s.len(), "projects": seen_p.len(), "db_mb": db_mb}
+    });
+    // "</" would close the inline <script> if a snippet contains it
+    let payload = data.to_string().replace("</", "<\\/");
+    let html = include_str!("map.html")
+        .replace("/*%%PAYLOAD%%*/ null", &payload)
+        .replace("/*%%VENDOR%%*/", include_str!("vendor/3d-force-graph.min.js"));
+    let out = data_dir().join("map.html");
+    fs::write(&out, &html)?;
+    println!(
+        "map: {} ({n_nodes} nodes, {n_links} links, {:.1} MB)",
+        out.display(),
+        html.len() as f64 / 1e6
+    );
+    if open {
+        let _ = std::process::Command::new("xdg-open").arg(&out).spawn();
+    }
+    Ok(())
+}
+
 // ---------- stats / doctor ----------
 
 fn stats() -> R<()> {
@@ -586,8 +720,9 @@ fn main() {
         Some("search") => search(&args[1..]),
         Some("stats") => stats(),
         Some("doctor") => doctor(),
+        Some("map") => map(&args[1..]),
         _ => Err(
-            "usage: cml index [--all] | search <terms> [--project P] [--role R] [--limit N] | stats | doctor | capture | nudge"
+            "usage: cml index [--all] | search <terms> [--project P] [--role R] [--limit N] | map [--limit N] [--no-open] | stats | doctor | capture | nudge"
                 .into(),
         ),
     };

@@ -16,6 +16,7 @@ Binary resolution: `cml` on PATH, or `~/.claude/claude-memory-light/bin/cml` (th
    - No hits ≠ not found: try 2-3 DIFFERENT keyword sets (synonyms, error text, filenames) before concluding anything.
 2. Full context around a transcript hit: open `~/.claude/projects/<project-dir>/<session>*.jsonl` (glob the 8-char session prefix) and grep near the snippet text.
 3. `cml stats` — coverage. `cml index` — manual refresh. `cml index --all` — full rebuild (index is disposable; transcripts are the source of truth).
+4. `cml map` — render the whole memory as an interactive 3D graph (one offline HTML file, opens in browser). Use when the user asks to "see", "visualize", or "map" their memory.
 
 ## Rules
 

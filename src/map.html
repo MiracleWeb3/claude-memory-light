@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>cml — memory map</title>
+<style>
+  :root {
+    --bg: #05060a; --panel: rgba(13,17,23,.82); --border: #1f2733;
+    --text: #e6edf3; --dim: #8b949e; --accent: #f97316;
+    --user: #fb923c; --assistant: #60a5fa; --summary: #94a3b8;
+    --memory: #34d399; --wiki: #c084fc; --project: #f59e0b; --session: #64748b;
+  }
+  * { margin: 0; box-sizing: border-box; }
+  body { background: var(--bg); color: var(--text); font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow: hidden; }
+  #graph { position: fixed; inset: 0; }
+  .panel {
+    position: fixed; z-index: 10; background: var(--panel); border: 1px solid var(--border);
+    border-radius: 12px; padding: 14px 16px; backdrop-filter: blur(10px);
+  }
+  #hud { top: 16px; left: 16px; width: 300px; }
+  #hud h1 { font-size: 19px; letter-spacing: .5px; }
+  #hud h1 b { color: var(--accent); }
+  #stats { color: var(--dim); font-size: 12px; margin: 6px 0 10px; }
+  #q {
+    width: 100%; background: #0b0f14; border: 1px solid var(--border); border-radius: 8px;
+    color: var(--text); padding: 8px 10px; font: inherit; outline: none;
+  }
+  #q:focus { border-color: var(--accent); }
+  #chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .chip {
+    border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px; font-size: 12px;
+    cursor: pointer; user-select: none; color: var(--dim); transition: all .15s;
+  }
+  .chip.on { color: #05060a; font-weight: 600; }
+  .chip[data-g="user"].on { background: var(--user); }
+  .chip[data-g="assistant"].on { background: var(--assistant); }
+  .chip[data-g="summary"].on { background: var(--summary); }
+  .chip[data-g="memory"].on { background: var(--memory); }
+  .chip[data-g="wiki"].on { background: var(--wiki); }
+  #hint { color: var(--dim); font-size: 11px; margin-top: 10px; }
+  #detail { right: 16px; top: 16px; width: 360px; display: none; max-height: calc(100vh - 32px); overflow: auto; }
+  #detail .role { display: inline-block; border-radius: 6px; padding: 2px 8px; font-size: 11px; font-weight: 700; color: #05060a; }
+  #detail .meta { color: var(--dim); font-size: 12px; margin: 8px 0; }
+  #detail .snippet { white-space: pre-wrap; word-break: break-word; font-size: 13px; background: #0b0f14; border-radius: 8px; padding: 10px 12px; }
+  #detail .cmd { margin-top: 12px; color: var(--dim); font-size: 11px; }
+  #detail .cmd code { color: var(--memory); }
+  #close { float: right; cursor: pointer; color: var(--dim); }
+  #loading {
+    position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+    background: var(--bg); z-index: 100; flex-direction: column; gap: 12px;
+  }
+  .pulse { width: 14px; height: 14px; border-radius: 50%; background: var(--accent); animation: p 1s infinite alternate; }
+  @keyframes p { from { transform: scale(1); opacity: .5 } to { transform: scale(1.8); opacity: 1 } }
+</style>
+</head>
+<body>
+<div id="loading"><div class="pulse"></div><div style="color:var(--dim)">building your memory…</div></div>
+<div id="graph"></div>
+
+<div id="hud" class="panel">
+  <h1>🧠 <b>cml</b> memory map</h1>
+  <div id="stats"></div>
+  <input id="q" placeholder="search… (Enter to fly, Esc to clear)"/>
+  <div id="chips">
+    <span class="chip on" data-g="user">user</span>
+    <span class="chip on" data-g="assistant">assistant</span>
+    <span class="chip on" data-g="summary">summary</span>
+    <span class="chip on" data-g="memory">memory</span>
+    <span class="chip on" data-g="wiki">wiki</span>
+  </div>
+  <div id="hint">drag to orbit · scroll to zoom · click a node for details</div>
+</div>
+
+<div id="detail" class="panel">
+  <span id="close">✕</span>
+  <span class="role" id="d-role"></span>
+  <div class="meta" id="d-meta"></div>
+  <div class="snippet" id="d-snip"></div>
+  <div class="cmd" id="d-cmd"></div>
+</div>
+
+<script>window.CML_GRAPH = /*%%PAYLOAD%%*/ null;</script>
+<script>/*%%VENDOR%%*/</script>
+<script>
+"use strict";
+window.addEventListener("error", e => {
+  const l = document.getElementById("loading");
+  if (l && l.style.display !== "none")
+    l.innerHTML = '<div style="color:#f87171">map failed to start: ' + (e.message || "unknown error") + "</div>";
+});
+const DATA = window.CML_GRAPH;
+const COLORS = {
+  center: "#f97316", project: "#f59e0b", session: "#64748b",
+  user: "#fb923c", assistant: "#60a5fa", summary: "#94a3b8",
+  memory: "#34d399", wiki: "#c084fc"
+};
+const off = new Set();
+let matched = null;
+
+const Graph = ForceGraph3D()(document.getElementById("graph"))
+  .backgroundColor("#05060a")
+  .graphData(DATA)
+  .nodeLabel(n => n.group === "center" ? "memory"
+    : n.group === "project" ? `project: ${n.label}`
+    : n.group === "session" ? `session ${n.label}`
+    : `[${n.group}] ${n.ts || ""}\n${(n.snippet || "").slice(0, 120)}`)
+  .nodeVal(n => n.val)
+  .nodeColor(n => {
+    const base = COLORS[n.group] || "#8b949e";
+    if (matched) return matched.has(n.id) ? "#ffffff" : base + "26";
+    return base;
+  })
+  .nodeOpacity(0.92)
+  .nodeResolution(10)
+  .nodeVisibility(n => !(off.has(n.group)))
+  .linkVisibility(l => {
+    const s = typeof l.source === "object" ? l.source : { group: "" };
+    const t = typeof l.target === "object" ? l.target : { group: "" };
+    return !(off.has(s.group) || off.has(t.group));
+  })
+  .linkColor(l => l.kind === "spine" ? "#f9731655" : l.kind === "wikilink" ? "#34d39988" : "#1e293b")
+  .linkOpacity(0.35)
+  .linkWidth(l => l.kind === "spine" ? 1.2 : l.kind === "wikilink" ? 1.0 : 0.3)
+  .linkDirectionalParticles(l => l.kind === "spine" ? 2 : l.kind === "wikilink" ? 1 : 0)
+  .linkDirectionalParticleSpeed(0.004)
+  .linkDirectionalParticleWidth(1.6)
+  .warmupTicks(80)
+  .cooldownTicks(220)
+  .onNodeClick(node => {
+    const d = document.getElementById("detail");
+    if (node.group === "center" || node.group === "project" || node.group === "session") {
+      flyTo(node); return;
+    }
+    d.style.display = "block";
+    const r = document.getElementById("d-role");
+    r.textContent = node.group;
+    r.style.background = COLORS[node.group] || "#8b949e";
+    document.getElementById("d-meta").textContent =
+      `${node.ts || "no date"} · ${node.project || ""} · session ${node.session || ""}`;
+    document.getElementById("d-snip").textContent = node.snippet || "";
+    const words = (node.snippet || "").split(/\s+/).filter(w => w.length > 5).slice(0, 3).join(" ");
+    document.getElementById("d-cmd").innerHTML =
+      `open in terminal: <code>cml search "${words.replace(/"/g, "")}"</code>`;
+    flyTo(node);
+  });
+
+document.getElementById("loading").style.display = "none";
+
+function flyTo(node) {
+  const dist = 130;
+  const ratio = 1 + dist / Math.hypot(node.x || 1, node.y || 1, node.z || 1);
+  Graph.cameraPosition(
+    { x: node.x * ratio, y: node.y * ratio, z: node.z * ratio }, node, 1200);
+}
+
+// auto-orbit until the user grabs it
+let angle = 0, orbiting = true;
+const orbit = setInterval(() => {
+  if (!orbiting) return clearInterval(orbit);
+  angle += Math.PI / 900;
+  Graph.cameraPosition({ x: 720 * Math.sin(angle), z: 720 * Math.cos(angle) });
+}, 30);
+["pointerdown", "wheel"].forEach(ev =>
+  document.getElementById("graph").addEventListener(ev, () => { orbiting = false; }, { once: true }));
+
+// role filter chips
+document.querySelectorAll(".chip").forEach(ch => ch.addEventListener("click", () => {
+  const g = ch.dataset.g;
+  ch.classList.toggle("on");
+  ch.classList.contains("on") ? off.delete(g) : off.add(g);
+  Graph.nodeVisibility(Graph.nodeVisibility());
+  Graph.linkVisibility(Graph.linkVisibility());
+}));
+
+// search
+const q = document.getElementById("q");
+q.addEventListener("keydown", e => {
+  if (e.key === "Escape") { q.value = ""; matched = null; Graph.nodeColor(Graph.nodeColor()); return; }
+  if (e.key !== "Enter") return;
+  const s = q.value.trim().toLowerCase();
+  if (!s) { matched = null; Graph.nodeColor(Graph.nodeColor()); return; }
+  matched = new Set(DATA.nodes
+    .filter(n => (n.snippet || "").toLowerCase().includes(s) || (n.label || "").toLowerCase().includes(s))
+    .map(n => n.id));
+  Graph.nodeColor(Graph.nodeColor());
+  const first = DATA.nodes.find(n => matched.has(n.id) && n.group !== "project" && n.group !== "session");
+  if (first) flyTo(first);
+  document.getElementById("stats").textContent = statsLine() + ` · ${matched.size} match`;
+});
+
+document.getElementById("close").addEventListener("click",
+  () => document.getElementById("detail").style.display = "none");
+
+function statsLine() {
+  const s = DATA.stats;
+  return `${s.rows} rows · ${s.sessions} sessions · ${s.projects} projects · ${s.db_mb} MB`;
+}
+document.getElementById("stats").textContent = statsLine();
+</script>
+</body>
+</html>
