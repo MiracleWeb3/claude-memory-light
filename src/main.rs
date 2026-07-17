@@ -147,6 +147,17 @@ fn forgotten_set(conn: &Connection) -> std::collections::HashSet<String> {
         .unwrap_or_default()
 }
 
+/// stable_key -> distilled gist. What the map and search DISPLAY for a curated row:
+/// the clean essence instead of the raw filler-wrapped message.
+fn gist_lookup(conn: &Connection) -> std::collections::HashMap<String, String> {
+    conn.prepare("SELECT key, gist FROM distilled WHERE gist != ''")
+        .and_then(|mut s| {
+            s.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
+                .map(|rows| rows.flatten().collect())
+        })
+        .unwrap_or_default()
+}
+
 fn is_noise(text: &str) -> bool {
     let t = text.trim_start();
     t.is_empty()
@@ -154,6 +165,8 @@ fn is_noise(text: &str) -> bool {
         || t.starts_with("<command-name>")
         || t.starts_with("<local-command")
         || t.starts_with("<system-reminder>")
+        || t.starts_with("Base directory for this skill")
+        || t.starts_with("Launching skill:")
 }
 
 // ---------- index ----------
@@ -540,8 +553,9 @@ fn search(args: &[String]) -> R<()> {
     let mut ranked: Vec<(i64, f64)> = score.into_iter().collect();
     ranked.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
+    let gists = gist_lookup(&conn);
     let mut fetch = conn.prepare(
-        "SELECT ts, role, project, session, substr(text,1,170) FROM mem WHERE rowid=?1",
+        "SELECT ts, role, project, session, substr(text,1,170), substr(text,1,64) FROM mem WHERE rowid=?1",
     )?;
     let mut printed = 0usize;
     for (rowid, _) in &ranked {
@@ -555,11 +569,16 @@ fn search(args: &[String]) -> R<()> {
                 r.get::<_, String>(2)?,
                 r.get::<_, String>(3)?,
                 r.get::<_, String>(4)?,
+                r.get::<_, String>(5)?,
             ))
         });
-        let Ok((ts, rrole, proj, sess, snip)) = row else {
+        let Ok((ts, rrole, proj, sess, raw, head)) = row else {
             continue;
         };
+        let snip = gists
+            .get(&stable_key(&sess, &ts, &rrole, &head))
+            .cloned()
+            .unwrap_or(raw);
         if let Some(p) = &project {
             if !proj.to_lowercase().contains(&p.to_lowercase()) {
                 continue;
@@ -861,6 +880,7 @@ fn map(args: &[String]) -> R<()> {
     let mut role_counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
     let mut note_ids: std::collections::HashMap<String, String> = std::collections::HashMap::new();
     let mut pending_wikilinks: Vec<(String, Vec<String>)> = Vec::new();
+    let gists = gist_lookup(&conn);
     {
         let mut stmt = conn.prepare(
             "SELECT rowid, role, project, session, ts, text FROM mem ORDER BY rowid DESC LIMIT ?1",
@@ -900,13 +920,17 @@ fn map(args: &[String]) -> R<()> {
                     pending_wikilinks.push((mid, found));
                 }
             }
+            let snip = gists
+                .get(&stable_key(&session, &ts, &role, &text))
+                .cloned()
+                .unwrap_or_else(|| text.chars().take(320).collect());
             msgs.push(MRow {
                 rowid,
                 role,
                 pidx,
                 sidx,
                 date: if ts.len() >= 10 { ts.chars().take(10).collect() } else { String::new() },
-                snip: text.chars().take(320).collect(),
+                snip,
                 sess8: session.chars().take(8).collect(),
                 project,
             });
