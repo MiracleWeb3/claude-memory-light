@@ -83,7 +83,9 @@ for (const n of DATA.nodes) {
   (groupsOf[n.group] = groupsOf[n.group] || []).push(n);
 }
 const instMeshes = [];
+const instByGroup = {};
 const tmpM = new Matrix4(), tmpQ = new Quaternion(), tmpS = new Vector3(), tmpV = new Vector3();
+const tmpC = new Color(), tmpC2 = new Color();
 for (const g in groupsOf) {
   const list = groupsOf[g];
   const mat = new MeshPhongMaterial({ shininess: 42, specular: 0x2a1114 });
@@ -99,6 +101,7 @@ for (const g in groupsOf) {
   inst.userData = { g, list };
   scene.add(inst);
   instMeshes.push(inst);
+  instByGroup[g] = inst;
 }
 /* the core: shaded sphere + additive glow sprite */
 const coreNode = byId.get("center");
@@ -165,11 +168,19 @@ const ring = new Mesh(sphereGeo, new MeshBasicMaterial({ wireframe: true, color:
 ring.visible = false; scene.add(ring);
 
 /* ---------- orbit controls, hand-rolled: drag orbits, wheel zooms ---------- */
-const ctrl = { dist: 800, theta: 0.55, phi: 1.12, target: new Vector3(), vt: 0, vp: 0, vd: 0 };
-let interacted = false, dragging = false, lastX = 0, lastY = 0, moved = 0;
+/* direct-drive orbit: rotation follows the hand 1:1 with a short inertia tail,
+   wheel zooms TOWARD the cursor, right/middle drag pans. */
+const ctrl = { dist: 800, theta: 0.55, phi: 1.12, target: new Vector3(), vt: 0, vp: 0 };
+let interacted = false, dragging = 0, lastX = 0, lastY = 0, moved = 0;
 const dom = renderer.domElement;
-dom.addEventListener("pointerdown", e => { dragging = true; moved = 0; lastX = e.clientX; lastY = e.clientY; interacted = true; });
-addEventListener("pointerup", () => { dragging = false; });
+dom.addEventListener("contextmenu", e => e.preventDefault());
+dom.addEventListener("pointerdown", e => {
+  dragging = e.button === 2 || e.button === 1 ? 2 : 1;
+  moved = 0; lastX = e.clientX; lastY = e.clientY;
+  interacted = true; tween = null;
+  ctrl.vt = ctrl.vp = 0;
+});
+addEventListener("pointerup", () => { dragging = 0; });
 addEventListener("pointermove", e => {
   mouse.x = (e.clientX / innerWidth) * 2 - 1;
   mouse.y = -(e.clientY / innerHeight) * 2 + 1;
@@ -177,14 +188,36 @@ addEventListener("pointermove", e => {
   const dx = e.clientX - lastX, dy = e.clientY - lastY;
   moved += Math.abs(dx) + Math.abs(dy);
   lastX = e.clientX; lastY = e.clientY;
-  ctrl.vt -= dx * 0.0035; ctrl.vp -= dy * 0.0035;
+  if (dragging === 2) {
+    // pan: slide the target along the camera plane
+    const k = ctrl.dist * 0.0011;
+    camera.getWorldDirection(tmpV);
+    const right = tmpV.clone().cross(camera.up).normalize();
+    const upv = right.clone().cross(tmpV).normalize();
+    ctrl.target.addScaledVector(right, -dx * k).addScaledVector(upv, dy * k);
+  } else {
+    // orbit: 1:1 with the hand, plus a small tail
+    ctrl.theta -= dx * 0.0034;
+    ctrl.phi -= dy * 0.0034;
+    ctrl.vt = -dx * 0.00055;
+    ctrl.vp = -dy * 0.00055;
+  }
 });
-dom.addEventListener("wheel", e => { e.preventDefault(); interacted = true; ctrl.vd += (e.deltaY > 0 ? 1 : -1) * 0.06; }, { passive: false });
+dom.addEventListener("wheel", e => {
+  e.preventDefault(); interacted = true; tween = null;
+  const f = e.deltaY > 0 ? 1.14 : 0.877;
+  if (f < 1) {
+    // zoom in toward what's under the cursor
+    raycaster.setFromCamera(mouse, camera);
+    tmpV.copy(raycaster.ray.direction).multiplyScalar(ctrl.dist * 0.85).add(raycaster.ray.origin);
+    ctrl.target.lerp(tmpV, 0.24);
+  }
+  ctrl.dist = Math.max(70, Math.min(2800, ctrl.dist * f));
+}, { passive: false });
 function applyCam() {
-  ctrl.theta += ctrl.vt; ctrl.phi += ctrl.vp; ctrl.dist *= 1 + ctrl.vd;
-  ctrl.vt *= 0.86; ctrl.vp *= 0.86; ctrl.vd *= 0.8;
+  ctrl.theta += ctrl.vt; ctrl.phi += ctrl.vp;
+  ctrl.vt *= 0.8; ctrl.vp *= 0.8;
   ctrl.phi = Math.max(0.12, Math.min(3.0, ctrl.phi));
-  ctrl.dist = Math.max(70, Math.min(2800, ctrl.dist));
   if (!interacted && !reduced && !tween) ctrl.theta += 0.00045;
   const sp = Math.sin(ctrl.phi);
   camera.position.set(
@@ -230,18 +263,20 @@ function brightSet() {
   return null;
 }
 const DIM = 0.14;
+let curBright = null;
+function colorFor(n, out) {
+  const g = n._g || n.group;
+  if (state.matched) return state.matched.has(n.id) ? WHITE : out.copy(COL[g]).multiplyScalar(DIM);
+  if (curBright) return curBright.has(n.id) ? COL[g] : out.copy(COL[g]).multiplyScalar(DIM);
+  return COL[g];
+}
 function applyStyles() {
-  const bright = brightSet(), m = state.matched;
+  curBright = brightSet();
+  const bright = curBright;
   const cTmp = new Color();
   for (const inst of instMeshes) {
-    const { g, list } = inst.userData;
-    for (let i = 0; i < list.length; i++) {
-      const n = list[i];
-      let c = COL[g];
-      if (m) c = m.has(n.id) ? WHITE : cTmp.copy(COL[g]).multiplyScalar(DIM);
-      else if (bright) c = bright.has(n.id) ? COL[g] : cTmp.copy(COL[g]).multiplyScalar(DIM);
-      inst.setColorAt(i, c);
-    }
+    const { list } = inst.userData;
+    for (let i = 0; i < list.length; i++) inst.setColorAt(i, colorFor(list[i], cTmp));
     inst.instanceColor.needsUpdate = true;
   }
   for (const lines of [dimLines, brightLines]) {
@@ -254,6 +289,29 @@ function applyStyles() {
     }
     col.needsUpdate = true;
   }
+}
+/* hover: the node itself responds — grows and brightens */
+function setNodeScale(n, mul) {
+  const inst = instByGroup[n._g];
+  if (!inst) return;
+  const r = radiusOf(n) * mul;
+  tmpM.compose(P(n), tmpQ, tmpS.set(r, r, r));
+  inst.setMatrixAt(n._i, tmpM);
+  inst.instanceMatrix.needsUpdate = true;
+}
+function highlightNode(n) {
+  const inst = instByGroup[n._g];
+  if (!inst) return;
+  setNodeScale(n, 1.35);
+  inst.setColorAt(n._i, tmpC.copy(colorFor(n, tmpC2)).lerp(WHITE, 0.5));
+  inst.instanceColor.needsUpdate = true;
+}
+function unhighlightNode(n) {
+  const inst = instByGroup[n._g];
+  if (!inst) return;
+  setNodeScale(n, 1);
+  inst.setColorAt(n._i, colorFor(n, tmpC2));
+  inst.instanceColor.needsUpdate = true;
 }
 const WHITE = new Color(0xffffff);
 function crumbs() {
@@ -344,6 +402,9 @@ function raycast() {
     n = h.object.userData.list[h.instanceId];
   } else if (raycaster.intersectObject(core, false).length) n = coreNode;
   if (n !== hoverNode) {
+    if (hoverNode && hoverNode._g) unhighlightNode(hoverNode);
+    if (n && n._g) highlightNode(n);
+    core.scale.setScalar(n === coreNode ? 25 : 22);
     hoverNode = n;
     dom.style.cursor = n ? "pointer" : "default";
     $("readout").textContent = !n ? "" :
