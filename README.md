@@ -168,6 +168,7 @@ The vector gap is closed, and it stayed on-principle: embeddings come from a loc
 | `cml search <terms> [--project P] [--role R] [--limit N] [--semantic\|--keyword]` | hybrid ranked search |
 | `cml embed [--all]` | build (or rebuild) the semantic index — one-time init, then automatic |
 | `cml forget <rowid...>` \| `--match "<q>" [--yes]` | purge junk memories, blocklisted so reindexing never resurrects them (`--clear` undoes) |
+| `cml distill` | optional LLM curation: a cheap external model (DeepSeek) judges each assistant row — narration dropped, keepers get a one-line gist; runs automatically at index time once a key sits in `deepseek.key` |
 | `cml map [--limit N] [--code G] [--no-code] [--no-open]` | build + open the 3D memory map |
 | `cml stats` | row counts, DB size |
 | `cml doctor` | environment check, graphify detection |

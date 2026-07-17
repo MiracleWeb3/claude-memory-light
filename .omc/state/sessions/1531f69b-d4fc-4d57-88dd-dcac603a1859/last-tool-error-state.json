@@ -1,7 +1,7 @@
 {
   "tool_name": "Bash",
-  "tool_input_preview": "{\"command\":\"sed -i 's/dist: 980,/dist: 800,/; s/new Vector3(0, 0, 0), 980, 900/new Vector3(0, 0, 0), 800, 900/' src/app.js && sed -i 's/^version = \\\"1.6.0\\\"/version = \\\"2.0.0\\\"/' Cargo.toml && sed -i ...",
-  "error": "Exit code 141\n    Finished `release` profile [optimized] target(s) in 42.35s\nmap: /home/definitive/.claude/claude-memory-light/map.html (4335 nodes, 4460 links, 0 code, 3.6 MB)\nv2.0.0 pushed\n0750de2  map v2: scrap the graph lib, pure three.js. instanced spheres put the whole brain in 10 draw calls, own orbit controls, breadcrumbs, fixed reading panel. 59fps measured on the igpu that used to lag\nfbda585  map: fix the real bottleneck. session-capsule lod (~400 draw calls, was ~8700), links back to...",
-  "timestamp": "2026-07-17T17:51:46.973Z",
-  "retry_count": 1
+  "tool_input_preview": "{\"command\":\"cd ~/dev/business/black/telegram-bots/parserx && set -a && . ./.vps.env && set +a && K=$(sshpass -p \\\"$VPS_PASS\\\" ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 \\\"$VPS_USER@$...",
+  "error": "Exit code 1",
+  "timestamp": "2026-07-17T21:14:05.568Z",
+  "retry_count": 4
 }

@@ -76,6 +76,7 @@ fn open_db() -> R<Connection> {
          PRAGMA synchronous=NORMAL;
          CREATE TABLE IF NOT EXISTS files(path TEXT PRIMARY KEY, size INTEGER, mtime INTEGER);
          CREATE TABLE IF NOT EXISTS forgotten(key TEXT PRIMARY KEY);
+         CREATE TABLE IF NOT EXISTS distilled(key TEXT PRIMARY KEY, gist TEXT);
          CREATE VIRTUAL TABLE IF NOT EXISTS mem USING fts5(
              text, role UNINDEXED, project UNINDEXED, session UNINDEXED,
              ts UNINDEXED, file UNINDEXED, tokenize='porter unicode61');",
@@ -430,8 +431,18 @@ fn index(force: bool) -> R<()> {
             embedded = embed_new(&conn, &model).unwrap_or(0);
         }
     }
+    // automatic curation: judge new rows when a DeepSeek key is configured (capped
+    // so the Stop hook stays quick; backlog drains over turns or via `cml distill`)
+    let mut curated = String::new();
+    if let Some(key) = deepseek_key() {
+        if let Ok((k, d)) = distill_new(&conn, &key, Some(40), false) {
+            if k + d > 0 {
+                curated = format!(", curated {k}+{d}dropped");
+            }
+        }
+    }
     println!(
-        "indexed {} file(s), {} row(s), {embedded} embedded  [transcripts {tf}/{tr}, memory {mf}/{mr}, wiki {wf}/{wr}]",
+        "indexed {} file(s), {} row(s), {embedded} embedded{curated}  [transcripts {tf}/{tr}, memory {mf}/{mr}, wiki {wf}/{wr}]",
         tf + mf + wf,
         tr + mr + wr
     );
@@ -1100,6 +1111,175 @@ fn map(args: &[String]) -> R<()> {
     Ok(())
 }
 
+// ---------- distill: DeepSeek judges what deserves memory; junk gets forgotten ----------
+
+fn deepseek_key() -> Option<String> {
+    fs::read_to_string(data_dir().join("deepseek.key"))
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .or_else(|| env::var("DEEPSEEK_API_KEY").ok().filter(|s| !s.is_empty()))
+}
+
+const DISTILL_MODEL: &str = "deepseek-v4-pro";
+
+/// One curl call judging a batch of rows. Returns (id, keep, gist) verdicts.
+fn judge_batch(key: &str, rows: &[(i64, String)]) -> R<Vec<(i64, bool, String)>> {
+    let items: Vec<Value> = rows
+        .iter()
+        .map(|(id, text)| json!({"id": id, "text": text}))
+        .collect();
+    let req = json!({
+        "model": DISTILL_MODEL,
+        "response_format": {"type": "json_object"},
+        "temperature": 0.0,
+        "messages": [
+            {"role": "system", "content": "You curate a developer's AI-assistant conversation history into long-term memory. For each row decide keep or drop.\nKEEP (keep=true): decisions with their reasons, solutions and fixes, technical knowledge, user preferences or corrections, outcomes with numbers, how-things-work explanations.\nDROP (keep=false): status narration (doing X now, blocked on Y, waiting for Z, walking it once more), progress-only reports, acknowledgments, process chatter with nothing reusable.\nFor kept rows add gist: the reusable essence in at most 120 characters.\nReply ONLY with JSON: {\"verdicts\":[{\"id\":<id>,\"keep\":true|false,\"gist\":\"...\"}]}"},
+            {"role": "user", "content": serde_json::to_string(&json!({"rows": items}))?}
+        ]
+    });
+    let tmp = data_dir().join(".distill-req.json");
+    fs::write(&tmp, serde_json::to_string(&req)?)?;
+    let out = std::process::Command::new("curl")
+        .args([
+            "-s", "--max-time", "90",
+            "-H", "Content-Type: application/json",
+            "-H", &format!("Authorization: Bearer {key}"),
+            "-d", &format!("@{}", tmp.display()),
+            "https://api.deepseek.com/chat/completions",
+        ])
+        .output()?;
+    let _ = fs::remove_file(&tmp);
+    let resp: Value = serde_json::from_slice(&out.stdout)
+        .map_err(|e| format!("deepseek response unreadable: {e}"))?;
+    let content = resp["choices"][0]["message"]["content"]
+        .as_str()
+        .ok_or_else(|| format!("deepseek error: {}", resp["error"]["message"].as_str().unwrap_or("no content")))?;
+    let parsed: Value = serde_json::from_str(content).map_err(|e| format!("verdict json bad: {e}"))?;
+    let empty = Vec::new();
+    let verdicts = parsed["verdicts"].as_array().unwrap_or(&empty);
+    Ok(verdicts
+        .iter()
+        .filter_map(|v| {
+            Some((
+                v["id"].as_i64()?,
+                v["keep"].as_bool()?,
+                v["gist"].as_str().unwrap_or("").to_string(),
+            ))
+        })
+        .collect())
+}
+
+fn purge_rowid(conn: &Connection, id: i64) -> bool {
+    let row = conn.query_row(
+        "SELECT session, ts, role, substr(text,1,64) FROM mem WHERE rowid=?1",
+        params![id],
+        |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, String>(3)?,
+            ))
+        },
+    );
+    let Ok((session, ts, role, head)) = row else { return false };
+    let _ = conn.execute(
+        "INSERT OR IGNORE INTO forgotten(key) VALUES (?1)",
+        params![stable_key(&session, &ts, &role, &head)],
+    );
+    let _ = conn.execute("DELETE FROM vec_mem WHERE rowid=?1", params![id]);
+    conn.execute("DELETE FROM mem WHERE rowid=?1", params![id]).is_ok()
+}
+
+/// Judge every unjudged assistant/summary row (user words are sacred search keys).
+/// cap limits rows per run so the Stop hook stays fast; None = drain everything.
+fn distill_new(conn: &Connection, key: &str, cap: Option<usize>, verbose: bool) -> R<(usize, usize)> {
+    let judged: std::collections::HashSet<String> = conn
+        .prepare("SELECT key FROM distilled")?
+        .query_map([], |r| r.get::<_, String>(0))?
+        .flatten()
+        .collect();
+    let all: Vec<(i64, String, String)> = conn
+        .prepare(
+            "SELECT rowid, substr(text,1,500), session || '|' || ts || '|' || role FROM mem
+             WHERE role IN ('assistant','summary')",
+        )?
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+        .collect::<rusqlite::Result<_>>()?;
+    let mut todo: Vec<(i64, String)> = all
+        .into_iter()
+        .filter(|(_, text, meta)| {
+            let head: String = text.chars().take(64).collect();
+            !judged.contains(&format!("{meta}|{head}"))
+        })
+        .map(|(id, text, _)| (id, text))
+        .collect();
+    if let Some(c) = cap {
+        todo.truncate(c);
+    }
+    if todo.is_empty() {
+        return Ok((0, 0));
+    }
+    let (mut kept, mut dropped) = (0usize, 0usize);
+    let batches: Vec<&[(i64, String)]> = todo.chunks(20).collect();
+    let total = batches.len();
+    for (bi, batch) in batches.into_iter().enumerate() {
+        match judge_batch(key, batch) {
+            Ok(verdicts) => {
+                for (id, keep, gist) in verdicts {
+                    let row = conn.query_row(
+                        "SELECT session, ts, role, substr(text,1,64) FROM mem WHERE rowid=?1",
+                        params![id],
+                        |r| {
+                            Ok((
+                                r.get::<_, String>(0)?,
+                                r.get::<_, String>(1)?,
+                                r.get::<_, String>(2)?,
+                                r.get::<_, String>(3)?,
+                            ))
+                        },
+                    );
+                    let Ok((s, t, ro, h)) = row else { continue };
+                    let k = stable_key(&s, &t, &ro, &h);
+                    if keep {
+                        conn.execute(
+                            "INSERT OR REPLACE INTO distilled(key, gist) VALUES (?1, ?2)",
+                            params![k, gist],
+                        )?;
+                        kept += 1;
+                    } else if purge_rowid(conn, id) {
+                        dropped += 1;
+                    }
+                }
+                if verbose {
+                    println!("batch {}/{total}: kept {kept}, dropped {dropped} so far", bi + 1);
+                }
+            }
+            Err(e) => {
+                if verbose {
+                    eprintln!("batch {}/{total} skipped ({e}) — rows stay, retried next run", bi + 1);
+                }
+            }
+        }
+    }
+    Ok((kept, dropped))
+}
+
+fn distill_cmd(_args: &[String]) -> R<()> {
+    let Some(key) = deepseek_key() else {
+        return Err("no DeepSeek key — put it in ~/.claude/claude-memory-light/deepseek.key or DEEPSEEK_API_KEY".into());
+    };
+    let conn = open_db()?;
+    let t0 = std::time::Instant::now();
+    let (kept, dropped) = distill_new(&conn, &key, None, true)?;
+    println!(
+        "distilled: kept {kept}, dropped {dropped} in {:.0}s ({DISTILL_MODEL}); dropped rows are blocklisted (undo: cml forget --clear)",
+        t0.elapsed().as_secs_f32()
+    );
+    Ok(())
+}
+
 // ---------- forget: purge junk from the brain, permanently ----------
 
 fn forget(args: &[String]) -> R<()> {
@@ -1227,6 +1407,15 @@ fn doctor() -> R<()> {
             println!("semantic        : off — run `cml embed` once to enable hybrid search");
         }
     }
+    {
+        let conn = open_db()?;
+        let dn: i64 = conn.query_row("SELECT count(*) FROM distilled", [], |r| r.get(0)).unwrap_or(0);
+        let fg: i64 = conn.query_row("SELECT count(*) FROM forgotten", [], |r| r.get(0)).unwrap_or(0);
+        match deepseek_key() {
+            Some(_) => println!("curation        : on ({DISTILL_MODEL}) — {dn} judged kept, {fg} forgotten"),
+            None => println!("curation        : off — put a key in ~/.claude/claude-memory-light/deepseek.key"),
+        }
+    }
     println!("hint: keep transcripts forever with \"cleanupPeriodDays\": 3650 in ~/.claude/settings.json");
     if db.is_file() {
         stats()?;
@@ -1272,8 +1461,9 @@ fn main() {
         Some("map") => map(&args[1..]),
         Some("embed") => embed_cmd(&args[1..]),
         Some("forget") => forget(&args[1..]),
+        Some("distill") => distill_cmd(&args[1..]),
         _ => Err(
-            "usage: cml index [--all] | search <terms> [--project P] [--role R] [--limit N] [--semantic|--keyword] | forget <rowid...> | forget --match \"<q>\" [--yes] | embed [--all] | map [--limit N] [--no-open] | stats | doctor | capture | nudge"
+            "usage: cml index [--all] | search <terms> [--project P] [--role R] [--limit N] [--semantic|--keyword] | forget <rowid...> | forget --match \"<q>\" [--yes] | distill | embed [--all] | map [--limit N] [--no-open] | stats | doctor | capture | nudge"
                 .into(),
         ),
     };
