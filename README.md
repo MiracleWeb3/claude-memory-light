@@ -32,7 +32,7 @@
 
 <div align="center">
 <img src="assets/map.png" width="880" alt="the 3D memory map — every message a star"/>
-<br/><sub>4,100 messages from 51 sessions, photographed with <code>cml map</code>. Green galaxy: curated memory notes linked by wikilinks. Cyan: the code graph.</sub>
+<br/><sub>the whole brain, live: 4,276 memories at 60 fps on the laptop iGPU it was built on. The glow is the core, red ganglia are sessions, orange and blue are you and Claude, green is curated memory.</sub>
 </div>
 
 The second hit in the demo below is real. The first thing this tool found on my machine was a conversation I'd forgotten, where Claude and I had already evaluated a memory plugin two weeks earlier and reached the same conclusion. That sold me.
@@ -122,11 +122,13 @@ A folder of markdown files, one page per topic, edited in place when facts chang
 cml map          # builds and opens it
 ```
 
-Your entire memory as a 3D force graph: projects orbit the center, sessions cluster around projects, every message is a particle colored by role. Memory notes and wiki pages link to each other through their `[[wikilinks]]`, so the curated layer renders like Obsidian's graph view, except in three dimensions and sitting next to the conversations it came from. Search flies the camera to matches, chips filter by role, clicking a node shows the text and the `cml search` command to pull it in a terminal.
+Your entire memory as a navigable 3D brain: projects orbit the center, sessions cluster around projects, every message is a shaded orb colored by role. Memory notes and wiki pages link to each other through their `[[wikilinks]]`, so the curated layer renders like Obsidian's graph view, except in three dimensions and sitting next to the conversations it came from. Search flies the camera to matches, chips filter by role, clicking a node shows the text and the `cml search` command to pull it in a terminal.
 
 And if the repo you're standing in has a graphify knowledge graph, the map picks it up on its own: `graphify-out/graph.json` renders as a cyan code constellation next to your conversations — functions, files, and concepts in the same space as the sessions that wrote them. `--code <path>` points it anywhere, `--no-code` turns it off.
 
-It boots like a ship computer: a startup sequence, synthesized interface sounds (WebAudio oscillators, no audio files — mute button remembers your choice), idle synaptic pulses traveling the links, hover cards that grow out of the node itself and pin into a full text block on click, floating project labels anchored in 3D space, and a project navigator with live counts. The layout is precomputed in Rust at generation time — deterministic radial shells, golden-angle distributed — so the browser runs **zero physics**: the brain appears fully formed in milliseconds. Sessions render as closed capsules sized by how much they hold; click one and its thoughts materialize instantly (positions already known). That keeps the scene a few hundred draw calls instead of thousands, which is what actually matters on an integrated GPU. An on-screen fps meter watches the frame rate, and an adaptive quality ladder steps down (pixel ratio → sphere detail → particles → starfield) if the renderer can't hold it — smooth everywhere, pretty wherever the hardware allows.
+It boots like a ship computer: a startup sequence, synthesized interface sounds (WebAudio oscillators, no audio files — the mute button remembers), and idle synaptic pulses traveling the links. Hover a node and it grows toward you; click and the thought opens in a fixed reading panel, with a breadcrumb trail — core ▸ project ▸ session ▸ thought — always showing where you are. Esc walks back up. Controls are the standard vocabulary: drag orbits, right-drag pans, the wheel zooms toward your cursor.
+
+The engine is vendored three.js driven by Rust. The layout is precomputed at generation time (deterministic radial shells, zero physics in the browser), and every node renders through instanced meshes — the entire brain is about **ten draw calls**, which is why it holds 60 fps on the integrated laptop GPU it was built on. An fps meter sits in the HUD, and an adaptive quality ladder steps down (pixel ratio → sphere detail → effects) on any renderer that can't keep up.
 
 One static HTML file with the render engine vendored in. Works offline, no CDN, no server. Generating 4,000+ nodes takes well under a second.
 
