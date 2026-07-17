@@ -986,7 +986,8 @@ fn map(args: &[String]) -> R<()> {
     let payload = data.to_string().replace("</", "<\\/");
     let html = include_str!("map.html")
         .replace("/*%%PAYLOAD%%*/ null", &payload)
-        .replace("/*%%VENDOR%%*/", include_str!("vendor/3d-force-graph.min.js"));
+        .replace("/*%%THREE%%*/", include_str!("vendor/three.module.js"))
+        .replace("/*%%APP%%*/", include_str!("app.js"));
     let out = data_dir().join("map.html");
     fs::write(&out, &html)?;
     println!(
