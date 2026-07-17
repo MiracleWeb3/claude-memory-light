@@ -44,12 +44,17 @@ fn flat_home() -> String {
 /// "-home-user-dev-foo" -> "dev-foo"; "-home-user" -> "home".
 fn project_label(dirname: &str) -> String {
     let fh = flat_home();
-    if dirname == fh {
+    let label = if dirname == fh {
         "home".to_string()
     } else if let Some(rest) = dirname.strip_prefix(&format!("{fh}-")) {
         rest.to_string()
     } else {
         dirname.trim_start_matches('-').to_string()
+    };
+    if label.is_empty() {
+        "misc".to_string()
+    } else {
+        label
     }
 }
 
@@ -681,6 +686,23 @@ fn wikilinks(text: &str) -> Vec<String> {
     out
 }
 
+/// Deterministic pseudo-random in [-1,1] from a seed — layout jitter without an RNG dep.
+fn jit(seed: u64) -> f64 {
+    let x = seed
+        .wrapping_mul(6364136223846793005)
+        .wrapping_add(1442695040888963407);
+    ((x >> 33) as u32) as f64 / u32::MAX as f64 * 2.0 - 1.0
+}
+
+/// i-th of n points on a unit sphere (golden-angle fibonacci lattice).
+fn fib_sphere(i: usize, n: usize) -> (f64, f64, f64) {
+    let nf = n.max(1) as f64;
+    let y = 1.0 - 2.0 * (i as f64 + 0.5) / nf;
+    let r = (1.0 - y * y).max(0.0).sqrt();
+    let phi = i as f64 * 2.399963229728653;
+    (r * phi.cos(), y, r * phi.sin())
+}
+
 fn map(args: &[String]) -> R<()> {
     let mut limit = 6000usize;
     let mut open = true;
@@ -703,7 +725,6 @@ fn map(args: &[String]) -> R<()> {
         }
         i += 1;
     }
-    // graphify integration: auto-detect the cwd's graph unless told otherwise
     if code_path.is_none() && !no_code {
         let auto = PathBuf::from("graphify-out/graph.json");
         if auto.is_file() {
@@ -711,64 +732,212 @@ fn map(args: &[String]) -> R<()> {
         }
     }
     let conn = open_db()?;
-    let mut nodes: Vec<Value> =
-        vec![json!({"id":"center","group":"center","label":"memory","val":34})];
-    let mut links: Vec<Value> = Vec::new();
-    let mut seen_p = std::collections::HashSet::new();
-    let mut seen_s = std::collections::HashSet::new();
+
+    // ---- pass A: collect everything ----
+    struct MRow {
+        rowid: i64,
+        role: String,
+        pidx: usize,
+        sidx: Option<usize>,
+        date: String,
+        snip: String,
+        sess8: String,
+        project: String,
+    }
+    let mut proj_names: Vec<String> = Vec::new();
+    let mut proj_of: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    let mut sess_list: Vec<(String, usize)> = Vec::new();
+    let mut sess_of: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    let mut msgs: Vec<MRow> = Vec::new();
+    let mut role_counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
     let mut note_ids: std::collections::HashMap<String, String> = std::collections::HashMap::new();
     let mut pending_wikilinks: Vec<(String, Vec<String>)> = Vec::new();
-    let mut stmt = conn.prepare(
-        "SELECT rowid, role, project, session, ts, text FROM mem ORDER BY rowid DESC LIMIT ?1",
-    )?;
-    let mut rows = stmt.query(params![limit as i64])?;
-    let mut n_msgs = 0usize;
-    while let Some(r) = rows.next()? {
-        let rowid: i64 = r.get(0)?;
-        let role: String = r.get(1)?;
-        let project: String = r.get(2)?;
-        let session: String = r.get(3)?;
-        let ts: String = r.get(4)?;
-        let text: String = r.get(5)?;
-        let snip: String = text.chars().take(180).collect();
-        let date: String = if ts.len() >= 10 {
-            ts.chars().take(10).collect()
-        } else {
-            String::new()
-        };
-        let sess8: String = session.chars().take(8).collect();
-        let pid = format!("p:{project}");
-        if seen_p.insert(project.clone()) {
-            nodes.push(json!({"id":pid,"group":"project","label":project,"val":16}));
-            links.push(json!({"source":"center","target":pid,"kind":"spine"}));
-        }
-        let mid = format!("m:{rowid}");
-        let parent = if role == "memory" {
-            pid.clone()
-        } else if role == "wiki" {
-            "center".to_string()
-        } else {
-            let sid = format!("s:{session}");
-            if seen_s.insert(sid.clone()) {
-                nodes.push(json!({"id":sid,"group":"session","label":sess8,"val":7}));
-                links.push(json!({"source":pid,"target":sid,"kind":"spine"}));
+    {
+        let mut stmt = conn.prepare(
+            "SELECT rowid, role, project, session, ts, text FROM mem ORDER BY rowid DESC LIMIT ?1",
+        )?;
+        let mut rows = stmt.query(params![limit as i64])?;
+        while let Some(r) = rows.next()? {
+            let rowid: i64 = r.get(0)?;
+            let role: String = r.get(1)?;
+            let project: String = r.get(2)?;
+            let session: String = r.get(3)?;
+            let ts: String = r.get(4)?;
+            let text: String = r.get(5)?;
+            // wiki pages hang off the core directly — registering their pseudo-project
+            // would put an empty planet on the ring
+            let pidx = if role == "wiki" {
+                0
+            } else {
+                *proj_of.entry(project.clone()).or_insert_with(|| {
+                    proj_names.push(project.clone());
+                    proj_names.len() - 1
+                })
+            };
+            let sidx = if role == "memory" || role == "wiki" {
+                None
+            } else {
+                Some(*sess_of.entry(session.clone()).or_insert_with(|| {
+                    sess_list.push((session.clone(), pidx));
+                    sess_list.len() - 1
+                }))
+            };
+            *role_counts.entry(role.clone()).or_default() += 1;
+            let mid = format!("m:{rowid}");
+            if role == "memory" || role == "wiki" {
+                note_ids.insert(session.to_lowercase(), mid.clone());
+                let found = wikilinks(&text);
+                if !found.is_empty() {
+                    pending_wikilinks.push((mid, found));
+                }
             }
-            sid
+            msgs.push(MRow {
+                rowid,
+                role,
+                pidx,
+                sidx,
+                date: if ts.len() >= 10 { ts.chars().take(10).collect() } else { String::new() },
+                snip: text.chars().take(320).collect(),
+                sess8: session.chars().take(8).collect(),
+                project,
+            });
+        }
+    }
+    // code graph (optional)
+    let mut code_nodes: Vec<(String, String, String)> = Vec::new();
+    let mut code_edges: Vec<(String, String)> = Vec::new();
+    let mut code_root_label = String::new();
+    if let Some(cp) = &code_path {
+        match fs::read_to_string(cp)
+            .map_err(|e| e.to_string())
+            .and_then(|s| serde_json::from_str::<Value>(&s).map_err(|e| e.to_string()))
+        {
+            Ok(g) => {
+                const CODE_CAP: usize = 3000;
+                code_root_label = env::current_dir()
+                    .ok()
+                    .and_then(|d| d.file_name().map(|n| n.to_string_lossy().to_string()))
+                    .unwrap_or_else(|| "repo".into());
+                let empty = Vec::new();
+                let gnodes = g["nodes"].as_array().unwrap_or(&empty);
+                let mut kept: std::collections::HashSet<String> = std::collections::HashSet::new();
+                for n in gnodes.iter().take(CODE_CAP) {
+                    let Some(id) = n["id"].as_str() else { continue };
+                    let label = n["label"].as_str().unwrap_or(id);
+                    let ftype = n["file_type"].as_str().unwrap_or("code");
+                    let src = n["source_file"].as_str().unwrap_or("");
+                    kept.insert(id.to_string());
+                    code_nodes.push((
+                        id.to_string(),
+                        label.to_string(),
+                        format!("{label}\n[{ftype}] {src}"),
+                    ));
+                }
+                if gnodes.len() > CODE_CAP {
+                    println!("code graph capped at {CODE_CAP} of {} nodes", gnodes.len());
+                }
+                let gedges = g["edges"].as_array().or_else(|| g["links"].as_array()).unwrap_or(&empty);
+                for e in gedges {
+                    let (Some(s), Some(t)) = (e["source"].as_str(), e["target"].as_str()) else {
+                        continue;
+                    };
+                    if kept.contains(s) && kept.contains(t) {
+                        code_edges.push((s.to_string(), t.to_string()));
+                    }
+                }
+            }
+            Err(e) => eprintln!("cml: could not read code graph {}: {e}", cp.display()),
+        }
+    }
+
+    // ---- pass B: deterministic layout, computed here so the browser does ZERO physics ----
+    let has_code = !code_nodes.is_empty();
+    let slots = proj_names.len() + usize::from(has_code);
+    let ring_r = 300.0;
+    let slot_pos = |k: usize| -> (f64, f64, f64) {
+        let th = std::f64::consts::TAU * k as f64 / slots.max(1) as f64;
+        (ring_r * th.cos(), ((k % 3) as f64 - 1.0) * 46.0, ring_r * th.sin())
+    };
+    // sessions on shells around their project
+    let mut sess_by_p: Vec<Vec<usize>> = vec![Vec::new(); proj_names.len()];
+    for (si, (_, p)) in sess_list.iter().enumerate() {
+        sess_by_p[*p].push(si);
+    }
+    let mut spos: Vec<(f64, f64, f64)> = vec![(0.0, 0.0, 0.0); sess_list.len()];
+    for (p, list) in sess_by_p.iter().enumerate() {
+        let base = slot_pos(p);
+        let r = 110.0 + (list.len() as f64).sqrt() * 7.0;
+        for (j, &si) in list.iter().enumerate() {
+            let (x, y, z) = fib_sphere(j, list.len());
+            spos[si] = (base.0 + x * r, base.1 + y * r * 0.72, base.2 + z * r);
+        }
+    }
+    // messages on shells around their parent
+    let mut order: std::collections::HashMap<(u8, usize), usize> = std::collections::HashMap::new();
+    let mut totals: std::collections::HashMap<(u8, usize), usize> = std::collections::HashMap::new();
+    let key_of = |m: &MRow| -> (u8, usize) {
+        match (&m.sidx, m.role.as_str()) {
+            (Some(s), _) => (0u8, *s),
+            (None, "wiki") => (2u8, 0),
+            (None, _) => (1u8, m.pidx),
+        }
+    };
+    for m in &msgs {
+        *totals.entry(key_of(m)).or_default() += 1;
+    }
+    let mut nodes: Vec<Value> = Vec::with_capacity(msgs.len() + sess_list.len() + slots + 2);
+    let mut links: Vec<Value> = Vec::with_capacity(msgs.len() + sess_list.len() + slots + code_edges.len());
+    nodes.push(json!({"id":"center","group":"center","label":"memory","val":34,"fx":0.0,"fy":0.0,"fz":0.0}));
+    for (p, name) in proj_names.iter().enumerate() {
+        let (x, y, z) = slot_pos(p);
+        nodes.push(json!({"id":format!("p:{name}"),"group":"project","label":name,"val":16,"fx":x,"fy":y,"fz":z}));
+        links.push(json!({"source":"center","target":format!("p:{name}"),"kind":"spine"}));
+    }
+    for (si, (sid, p)) in sess_list.iter().enumerate() {
+        let (x, y, z) = spos[si];
+        let sess8: String = sid.chars().take(8).collect();
+        nodes.push(json!({"id":format!("s:{sid}"),"group":"session","label":sess8,"val":7,"fx":x,"fy":y,"fz":z}));
+        links.push(json!({"source":format!("p:{}", proj_names[*p]),"target":format!("s:{sid}"),"kind":"spine"}));
+    }
+    for m in &msgs {
+        let k = key_of(m);
+        let idx = {
+            let e = order.entry(k).or_default();
+            let v = *e;
+            *e += 1;
+            v
+        };
+        let n = totals[&k];
+        let (bx, by, bz, r) = match k.0 {
+            0 => {
+                let b = spos[k.1];
+                (b.0, b.1, b.2, 26.0 + (n as f64).cbrt() * 7.0)
+            }
+            1 => {
+                let b = slot_pos(k.1);
+                (b.0, b.1, b.2, 78.0)
+            }
+            _ => (0.0, 0.0, 0.0, 140.0),
+        };
+        let (ux, uy, uz) = fib_sphere(idx, n);
+        let s = m.rowid as u64;
+        let (x, y, z) = (
+            bx + ux * r + jit(s) * 4.0,
+            by + uy * r + jit(s ^ 0xA5A5) * 4.0,
+            bz + uz * r + jit(s ^ 0x5A5A) * 4.0,
+        );
+        let parent = match k.0 {
+            0 => format!("s:{}", sess_list[k.1].0),
+            1 => format!("p:{}", proj_names[k.1]),
+            _ => "center".to_string(),
         };
         nodes.push(json!({
-            "id": mid, "group": role, "label": date, "snippet": snip,
-            "project": project, "session": sess8, "ts": date,
-            "val": if role == "memory" || role == "wiki" { 5.0 } else { 1.6 }
+            "id": format!("m:{}", m.rowid), "group": m.role, "label": m.date, "snippet": m.snip,
+            "project": m.project, "session": m.sess8, "ts": m.date,
+            "val": if m.role == "memory" || m.role == "wiki" { 5.0 } else { 1.6 },
+            "fx": x, "fy": y, "fz": z
         }));
-        links.push(json!({"source":parent,"target":mid,"kind":"leaf"}));
-        if role == "memory" || role == "wiki" {
-            note_ids.insert(session.to_lowercase(), mid.clone());
-            let found = wikilinks(&text);
-            if !found.is_empty() {
-                pending_wikilinks.push((mid, found));
-            }
-        }
-        n_msgs += 1;
+        links.push(json!({"source":parent,"target":format!("m:{}", m.rowid),"kind":"leaf"}));
     }
     for (from, targets) in pending_wikilinks {
         for name in targets {
@@ -780,54 +949,28 @@ fn map(args: &[String]) -> R<()> {
         }
     }
     let mut n_code = 0usize;
-    if let Some(cp) = &code_path {
-        match fs::read_to_string(cp).map_err(|e| e.to_string()).and_then(|s| {
-            serde_json::from_str::<Value>(&s).map_err(|e| e.to_string())
-        }) {
-            Ok(g) => {
-                const CODE_CAP: usize = 3000;
-                let root = format!(
-                    "code:{}",
-                    env::current_dir()
-                        .ok()
-                        .and_then(|d| d.file_name().map(|n| n.to_string_lossy().to_string()))
-                        .unwrap_or_else(|| "repo".into())
-                );
-                nodes.push(json!({"id":root,"group":"coderoot","label":"code","val":18}));
-                links.push(json!({"source":"center","target":root,"kind":"spine"}));
-                let mut kept: std::collections::HashSet<String> = std::collections::HashSet::new();
-                let empty = Vec::new();
-                let gnodes = g["nodes"].as_array().unwrap_or(&empty);
-                for n in gnodes.iter().take(CODE_CAP) {
-                    let Some(id) = n["id"].as_str() else { continue };
-                    let label = n["label"].as_str().unwrap_or(id);
-                    let ftype = n["file_type"].as_str().unwrap_or("code");
-                    let src = n["source_file"].as_str().unwrap_or("");
-                    kept.insert(id.to_string());
-                    nodes.push(json!({
-                        "id": format!("c:{id}"), "group": "code", "label": label,
-                        "snippet": format!("{label}\n[{ftype}] {src}"),
-                        "project": "code", "session": "", "ts": "", "val": 2.4
-                    }));
-                    links.push(json!({"source":root,"target":format!("c:{id}"),"kind":"tether"}));
-                    n_code += 1;
-                }
-                if gnodes.len() > CODE_CAP {
-                    println!("code graph capped at {CODE_CAP} of {} nodes", gnodes.len());
-                }
-                let gedges = g["edges"].as_array().or_else(|| g["links"].as_array()).unwrap_or(&empty);
-                for e in gedges {
-                    let (Some(s), Some(t)) = (e["source"].as_str(), e["target"].as_str()) else {
-                        continue;
-                    };
-                    if kept.contains(s) && kept.contains(t) {
-                        links.push(json!({"source":format!("c:{s}"),"target":format!("c:{t}"),"kind":"code"}));
-                    }
-                }
-            }
-            Err(e) => eprintln!("cml: could not read code graph {}: {e}", cp.display()),
+    if has_code {
+        let root = format!("code:{code_root_label}");
+        let (cx, cy, cz) = slot_pos(slots - 1);
+        nodes.push(json!({"id":root,"group":"coderoot","label":"code","val":18,"fx":cx,"fy":cy,"fz":cz}));
+        links.push(json!({"source":"center","target":root,"kind":"spine"}));
+        let cn = code_nodes.len();
+        let cr = 60.0 + (cn as f64).cbrt() * 9.0;
+        for (idx, (id, label, snip)) in code_nodes.iter().enumerate() {
+            let (ux, uy, uz) = fib_sphere(idx, cn);
+            nodes.push(json!({
+                "id": format!("c:{id}"), "group": "code", "label": label, "snippet": snip,
+                "project": "code", "session": "", "ts": "", "val": 2.4,
+                "fx": cx + ux * cr, "fy": cy + uy * cr, "fz": cz + uz * cr
+            }));
+            links.push(json!({"source":root,"target":format!("c:{id}"),"kind":"tether"}));
+            n_code += 1;
+        }
+        for (s, t) in &code_edges {
+            links.push(json!({"source":format!("c:{s}"),"target":format!("c:{t}"),"kind":"code"}));
         }
     }
+    let n_msgs = msgs.len();
     let n_nodes = nodes.len();
     let n_links = links.len();
     let db = data_dir().join("index.db");
@@ -836,7 +979,8 @@ fn map(args: &[String]) -> R<()> {
         .unwrap_or_else(|_| "?".into());
     let data = json!({
         "nodes": nodes, "links": links,
-        "stats": {"rows": n_msgs, "sessions": seen_s.len(), "projects": seen_p.len(), "db_mb": db_mb}
+        "stats": {"rows": n_msgs, "sessions": sess_list.len(), "projects": proj_names.len(),
+                  "db_mb": db_mb, "roles": role_counts}
     });
     // "</" would close the inline <script> if a snippet contains it
     let payload = data.to_string().replace("</", "<\\/");

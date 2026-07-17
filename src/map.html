@@ -6,96 +6,135 @@
 <title>cml — memory core</title>
 <style>
   :root {
-    --bg: #05060a; --panel: rgba(10,14,20,.78); --border: #1f2733;
-    --text: #e6edf3; --dim: #8b949e; --accent: #f97316; --accent2: #22d3ee;
+    --bg: #060407; --panel: rgba(16,8,10,.8); --border: #3a1418;
+    --text: #f5e9e9; --dim: #a08b8b; --accent: #ef4444; --accent2: #22d3ee;
     --user: #fb923c; --assistant: #60a5fa; --summary: #94a3b8;
     --memory: #34d399; --wiki: #c084fc;
   }
   * { margin: 0; box-sizing: border-box; }
   body { background: var(--bg); color: var(--text); font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow: hidden; }
-  #stars { position: fixed; inset: 0; pointer-events: none; }
+  #stars, #vig { position: fixed; inset: 0; pointer-events: none; }
+  #vig { z-index: 5; background: radial-gradient(ellipse at center, transparent 52%, rgba(127,10,16,.10) 80%, rgba(0,0,0,.62) 100%); }
   #graph { position: fixed; inset: 0; }
   .panel {
     position: fixed; z-index: 10; background: var(--panel); border: 1px solid var(--border);
-    border-radius: 12px; padding: 14px 16px; backdrop-filter: blur(12px);
+    border-radius: 10px; padding: 14px 16px; backdrop-filter: blur(12px);
   }
   .panel::before, .panel::after {
     content: ""; position: absolute; width: 16px; height: 16px;
-    border: 2px solid var(--accent); opacity: .6; pointer-events: none;
+    border: 2px solid var(--accent); opacity: .65; pointer-events: none;
   }
-  .panel::before { top: -2px; left: -2px; border-right: none; border-bottom: none; border-radius: 12px 0 0 0; }
-  .panel::after  { bottom: -2px; right: -2px; border-left: none; border-top: none; border-radius: 0 0 12px 0; }
-  #hud { top: 16px; left: 16px; width: 312px; overflow: hidden; animation: slidein .6s cubic-bezier(.2,.9,.25,1) both .2s; }
+  .panel::before { top: -2px; left: -2px; border-right: none; border-bottom: none; border-radius: 10px 0 0 0; }
+  .panel::after  { bottom: -2px; right: -2px; border-left: none; border-top: none; border-radius: 0 0 10px 0; }
+  #hud { top: 16px; left: 16px; width: 316px; overflow: hidden; animation: slidein .6s cubic-bezier(.2,.9,.25,1) both .2s; }
   #hud .scan {
     position: absolute; left: 0; right: 0; height: 70px; top: -70px; pointer-events: none;
-    background: linear-gradient(180deg, transparent, rgba(249,115,22,.05), transparent);
-    animation: scan 7s linear infinite 2s;
+    background: linear-gradient(180deg, transparent, rgba(239,68,68,.06), transparent);
+    animation: scan 6.5s linear infinite 2s;
   }
   #hud h1 { font-size: 19px; letter-spacing: .5px; }
-  #hud h1 b { color: var(--accent); }
+  #hud h1 b { color: var(--accent); text-shadow: 0 0 12px rgba(239,68,68,.5); }
   #status { display: flex; align-items: center; gap: 7px; color: var(--dim); font-size: 11px; margin-top: 4px; letter-spacing: .8px; }
-  #status .led { width: 7px; height: 7px; border-radius: 50%; background: var(--memory); animation: pulse 2.2s ease-in-out infinite; }
-  #stats { color: var(--dim); font-size: 12px; margin: 8px 0 10px; }
+  #status .led { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 8px var(--accent); animation: pulse 1.8s ease-in-out infinite; }
+  #stats { color: var(--dim); font-size: 12px; margin: 8px 0 8px; }
   #stats b { color: var(--text); font-weight: 600; }
-  #readout { color: var(--accent2); font-size: 11px; min-height: 15px; margin: 0 0 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #readout { color: #f87171; font-size: 11px; min-height: 15px; margin: 0 0 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   #q {
-    width: 100%; background: rgba(5,8,12,.9); border: 1px solid var(--border); border-radius: 8px;
+    width: 100%; background: rgba(8,4,6,.92); border: 1px solid var(--border); border-radius: 8px;
     color: var(--text); padding: 8px 10px; font: inherit; outline: none; transition: border-color .25s, box-shadow .25s;
   }
-  #q:focus { border-color: var(--accent); box-shadow: 0 0 14px rgba(249,115,22,.25); }
+  #q:focus { border-color: var(--accent); box-shadow: 0 0 16px rgba(239,68,68,.3); }
+  #projnav { margin-top: 10px; display: flex; flex-direction: column; gap: 3px; max-height: 150px; overflow: auto; }
+  .pn {
+    display: flex; justify-content: space-between; gap: 8px; padding: 3px 8px; border-radius: 6px;
+    cursor: pointer; color: var(--dim); font-size: 11.5px; transition: all .18s; border: 1px solid transparent;
+  }
+  .pn:hover { color: var(--text); border-color: var(--border); background: rgba(239,68,68,.06); transform: translateX(2px); }
+  .pn .dot { color: #f59e0b; }
+  .pn .n { color: #6b5a5a; }
   #chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
   .chip {
-    border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px; font-size: 11px;
+    border: 1px solid var(--border); border-radius: 999px; padding: 3px 9px; font-size: 10.5px;
     cursor: pointer; user-select: none; color: var(--dim); transition: all .22s cubic-bezier(.2,.9,.25,1);
   }
   .chip:hover { transform: translateY(-1px); border-color: var(--dim); }
-  .chip.on { color: #05060a; font-weight: 600; }
-  .chip[data-g="user"].on { background: var(--user); box-shadow: 0 0 10px rgba(251,146,60,.35); }
-  .chip[data-g="assistant"].on { background: var(--assistant); box-shadow: 0 0 10px rgba(96,165,250,.35); }
+  .chip.on { color: #060407; font-weight: 600; }
+  .chip[data-g="user"].on { background: var(--user); box-shadow: 0 0 10px rgba(251,146,60,.4); }
+  .chip[data-g="assistant"].on { background: var(--assistant); box-shadow: 0 0 10px rgba(96,165,250,.4); }
   .chip[data-g="summary"].on { background: var(--summary); }
-  .chip[data-g="memory"].on { background: var(--memory); box-shadow: 0 0 10px rgba(52,211,153,.35); }
-  .chip[data-g="wiki"].on { background: var(--wiki); box-shadow: 0 0 10px rgba(192,132,252,.35); }
-  .chip[data-g="code"].on { background: var(--accent2); box-shadow: 0 0 10px rgba(34,211,238,.35); }
+  .chip[data-g="memory"].on { background: var(--memory); box-shadow: 0 0 10px rgba(52,211,153,.4); }
+  .chip[data-g="wiki"].on { background: var(--wiki); box-shadow: 0 0 10px rgba(192,132,252,.4); }
+  .chip[data-g="code"].on { background: var(--accent2); box-shadow: 0 0 10px rgba(34,211,238,.4); }
   #btns { display: flex; gap: 6px; margin-top: 10px; }
   .btn {
     flex: 1; text-align: center; border: 1px solid var(--border); border-radius: 8px; padding: 5px 0;
     cursor: pointer; color: var(--dim); font-size: 12px; transition: all .22s;
   }
-  .btn:hover { color: var(--text); border-color: var(--accent); box-shadow: 0 0 10px rgba(249,115,22,.2); }
-  #hint { color: #56606c; font-size: 10.5px; margin-top: 10px; letter-spacing: .3px; }
+  .btn:hover { color: var(--text); border-color: var(--accent); box-shadow: 0 0 12px rgba(239,68,68,.25); }
+  #hint { color: #63504f; font-size: 10.5px; margin-top: 10px; letter-spacing: .3px; }
   kbd { border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; font-size: 10px; color: var(--dim); }
-  #detail {
-    right: 16px; top: 16px; width: 368px; max-height: calc(100vh - 32px); overflow: auto;
-    opacity: 0; transform: translateX(24px); visibility: hidden; transition: all .35s cubic-bezier(.2,.9,.25,1);
+
+  /* project labels pinned to 3D space */
+  .plabel {
+    position: fixed; left: 0; top: 0; z-index: 6; pointer-events: auto; cursor: pointer;
+    font-size: 11px; letter-spacing: .6px; color: #fbbf24; text-shadow: 0 0 8px rgba(0,0,0,.9);
+    padding: 1px 7px; border: 1px solid rgba(245,158,11,.35); border-radius: 999px;
+    background: rgba(10,6,4,.55); backdrop-filter: blur(3px); transition: border-color .2s, color .2s;
+    will-change: transform;
   }
-  #detail.show { opacity: 1; transform: none; visibility: visible; }
-  #detail .role { display: inline-block; border-radius: 6px; padding: 2px 8px; font-size: 11px; font-weight: 700; color: #05060a; }
-  #detail .meta { color: var(--dim); font-size: 12px; margin: 8px 0; }
-  #detail .snippet { white-space: pre-wrap; word-break: break-word; font-size: 13px; background: rgba(5,8,12,.85); border-radius: 8px; padding: 10px 12px; }
-  #detail .cmd { margin-top: 12px; color: var(--dim); font-size: 11px; }
-  #detail .cmd code { color: var(--memory); }
-  #close { float: right; cursor: pointer; color: var(--dim); transition: color .2s, transform .2s; }
-  #close:hover { color: var(--text); transform: rotate(90deg); }
+  .plabel:hover { color: #fde68a; border-color: #f59e0b; }
+  .plabel.core { color: #f87171; border-color: rgba(239,68,68,.45); }
+  .plabel.codeL { color: #67e8f9; border-color: rgba(34,211,238,.4); }
+
+  /* the node card: a circle that becomes a block of text */
+  #cardpos { position: fixed; left: 0; top: 0; z-index: 20; pointer-events: none; will-change: transform; }
+  #card {
+    transform: translate(-50%, calc(-100% - 16px)) scale(.15); transform-origin: 50% calc(100% + 16px);
+    opacity: 0; width: 280px; pointer-events: none;
+    background: rgba(14,7,9,.9); border: 1px solid var(--border); border-radius: 10px;
+    padding: 10px 12px; backdrop-filter: blur(10px);
+    transition: transform .28s cubic-bezier(.2,.9,.25,1), opacity .22s, width .28s cubic-bezier(.2,.9,.25,1);
+    box-shadow: 0 0 24px rgba(239,68,68,.12), 0 6px 30px rgba(0,0,0,.5);
+  }
+  #card::after {
+    content: ""; position: absolute; left: 50%; bottom: -7px; width: 12px; height: 12px;
+    background: inherit; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border);
+    transform: translateX(-50%) rotate(45deg);
+  }
+  #card.show { transform: translate(-50%, calc(-100% - 16px)) scale(1); opacity: 1; }
+  #card.pinned { width: 360px; pointer-events: auto; }
+  #card .role { display: inline-block; border-radius: 5px; padding: 1px 7px; font-size: 10.5px; font-weight: 700; color: #060407; }
+  #card .crumb { color: var(--dim); font-size: 11px; margin: 6px 0; }
+  #card .txt { font-size: 12.5px; white-space: pre-wrap; word-break: break-word; max-height: 60px; overflow: hidden; transition: max-height .3s; }
+  #card.pinned .txt { max-height: 46vh; overflow: auto; background: rgba(6,3,4,.7); border-radius: 7px; padding: 8px 10px; }
+  #card .cmd { display: none; margin-top: 9px; color: var(--dim); font-size: 10.5px; }
+  #card.pinned .cmd { display: block; }
+  #card .cmd code { color: var(--memory); }
+  #card .x { display: none; float: right; cursor: pointer; color: var(--dim); }
+  #card.pinned .x { display: block; }
+  #card .x:hover { color: var(--text); }
+
   #loading {
     position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
     background: var(--bg); z-index: 100; flex-direction: column; gap: 26px;
     transition: opacity .8s ease, visibility .8s;
   }
   #loading.off { opacity: 0; visibility: hidden; }
-  .ring { width: 74px; height: 74px; border-radius: 50%; position: relative;
-    background: conic-gradient(from 0deg, transparent 60%, var(--accent) 92%, transparent 100%);
+  .ring { width: 78px; height: 78px; border-radius: 50%; position: relative;
+    background: conic-gradient(from 0deg, transparent 58%, var(--accent) 92%, transparent 100%);
     -webkit-mask: radial-gradient(farthest-side, transparent 62%, #000 64%);
             mask: radial-gradient(farthest-side, transparent 62%, #000 64%);
-    animation: spin 1.15s linear infinite;
+    animation: spin 1.05s linear infinite;
+    filter: drop-shadow(0 0 10px rgba(239,68,68,.6));
   }
-  .ring2 { position: absolute; inset: 12px; border-radius: 50%;
-    background: conic-gradient(from 180deg, transparent 70%, var(--accent2) 96%, transparent 100%);
-    -webkit-mask: radial-gradient(farthest-side, transparent 58%, #000 60%);
-            mask: radial-gradient(farthest-side, transparent 58%, #000 60%);
-    animation: spin 1.7s linear infinite reverse;
+  .ring2 { position: absolute; inset: 13px; border-radius: 50%;
+    background: conic-gradient(from 180deg, transparent 68%, #f87171 96%, transparent 100%);
+    -webkit-mask: radial-gradient(farthest-side, transparent 56%, #000 58%);
+            mask: radial-gradient(farthest-side, transparent 56%, #000 58%);
+    animation: spin 1.6s linear infinite reverse;
   }
-  #bootlog { color: var(--dim); font-size: 12.5px; line-height: 1.9; min-height: 130px; min-width: 340px; }
-  #bootlog .ok { color: var(--memory); }
+  #bootlog { color: var(--dim); font-size: 12.5px; line-height: 1.9; min-height: 150px; min-width: 360px; }
+  #bootlog .ok { color: var(--accent); }
   #bootlog .val { color: var(--text); }
   #bootlog .cursor { display: inline-block; width: 7px; height: 13px; background: var(--accent); animation: pulse 1s steps(2) infinite; vertical-align: -2px; }
   @keyframes spin { to { transform: rotate(360deg); } }
@@ -112,6 +151,15 @@
   <pre id="bootlog"></pre>
 </div>
 <div id="graph"></div>
+<div id="vig"></div>
+
+<div id="cardpos"><div id="card">
+  <span class="x" id="cardx">✕</span>
+  <span class="role" id="c-role"></span>
+  <div class="crumb" id="c-crumb"></div>
+  <div class="txt" id="c-txt"></div>
+  <div class="cmd" id="c-cmd"></div>
+</div></div>
 
 <div id="hud" class="panel">
   <div class="scan"></div>
@@ -119,28 +167,14 @@
   <div id="status"><span class="led"></span><span>MEMORY CORE ONLINE</span></div>
   <div id="stats"></div>
   <div id="readout"></div>
-  <input id="q" placeholder="query memory…  ( / to focus )"/>
-  <div id="chips">
-    <span class="chip on" data-g="user">user</span>
-    <span class="chip on" data-g="assistant">assistant</span>
-    <span class="chip on" data-g="summary">summary</span>
-    <span class="chip on" data-g="memory">memory</span>
-    <span class="chip on" data-g="wiki">wiki</span>
-    <span class="chip on" data-g="code">code</span>
-  </div>
+  <input id="q" placeholder="query memory…  ( / to focus, live )"/>
+  <div id="projnav"></div>
+  <div id="chips"></div>
   <div id="btns">
-    <span class="btn" id="b-view" title="overview">⛶ overview</span>
-    <span class="btn" id="b-sound" title="sound">🔊 sound</span>
+    <span class="btn" id="b-view">⛶ overview</span>
+    <span class="btn" id="b-sound">🔊 sound</span>
   </div>
-  <div id="hint"><kbd>/</kbd> search · <kbd>Enter</kbd> fly · <kbd>Esc</kbd> clear · click = focus a thought</div>
-</div>
-
-<div id="detail" class="panel">
-  <span id="close">✕</span>
-  <span class="role" id="d-role"></span>
-  <div class="meta" id="d-meta"></div>
-  <div class="snippet" id="d-snip"></div>
-  <div class="cmd" id="d-cmd"></div>
+  <div id="hint"><kbd>/</kbd> search · <kbd>Enter</kbd> fly · <kbd>Esc</kbd> release · hover = read · click = pin the thought</div>
 </div>
 
 <script>window.CML_GRAPH = /*%%PAYLOAD%%*/ null;</script>
@@ -154,7 +188,7 @@ window.addEventListener("error", e => {
 });
 const DATA = window.CML_GRAPH;
 const COLORS = {
-  center: "#f97316", project: "#f59e0b", session: "#64748b",
+  center: "#ef4444", project: "#f59e0b", session: "#7f1d1d",
   user: "#fb923c", assistant: "#60a5fa", summary: "#94a3b8",
   memory: "#34d399", wiki: "#c084fc", code: "#22d3ee", coderoot: "#0ea5e9"
 };
@@ -176,46 +210,43 @@ function tone(freq, dur, type, vol, when, sweep) {
   o.start(t); o.stop(t + dur + 0.05);
 }
 const sfx = {
-  boot:   () => { tone(180, .5, "sine", .05, 0, 740); tone(440, .45, "sine", .028, .18, 1680); },
-  hover:  () => tone(1500, .028, "sine", .012),
-  click:  () => { tone(880, .06, "triangle", .045); tone(1320, .09, "triangle", .032, .05); },
-  found:  () => { tone(660, .08, "sine", .05); tone(990, .09, "sine", .045, .08); tone(1480, .12, "sine", .035, .16); },
-  none:   () => tone(200, .22, "sawtooth", .022, 0, 110),
-  toggle: () => tone(540, .05, "square", .02),
-  syn:    () => tone(1900 + Math.random() * 1100, .05, "sine", .006),
+  boot:   () => { tone(52, 1.4, "sine", .03); tone(160, .6, "sine", .05, .1, 640); tone(420, .5, "sine", .026, .3, 1500); },
+  hover:  () => tone(1500, .028, "sine", .011),
+  click:  () => { tone(780, .06, "triangle", .045); tone(1170, .09, "triangle", .03, .05); },
+  found:  () => { tone(620, .08, "sine", .05); tone(930, .09, "sine", .045, .08); tone(1400, .12, "sine", .033, .16); },
+  none:   () => tone(190, .22, "sawtooth", .02, 0, 100),
+  toggle: () => tone(520, .05, "square", .018),
+  syn:    () => tone(1800 + Math.random() * 1200, .05, "sine", .005),
 };
 
-/* ---------- parallax starfield behind a transparent renderer ---------- */
+/* ---------- starfield (renderer is transparent) ---------- */
 (function stars() {
   let a = "", b = "";
-  for (let i = 0; i < 120; i++) a += `${(Math.random() * 100).toFixed(1)}vw ${(Math.random() * 110).toFixed(1)}vh 0 rgba(230,237,243,${(.12 + Math.random() * .35).toFixed(2)}),`;
-  for (let i = 0; i < 45; i++) b += `${(Math.random() * 100).toFixed(1)}vw ${(Math.random() * 110).toFixed(1)}vh 1px rgba(249,${160 + (Math.random() * 70 | 0)},60,${(.08 + Math.random() * .2).toFixed(2)}),`;
+  for (let i = 0; i < 120; i++) a += `${(Math.random() * 100).toFixed(1)}vw ${(Math.random() * 110).toFixed(1)}vh 0 rgba(245,233,233,${(.10 + Math.random() * .3).toFixed(2)}),`;
+  for (let i = 0; i < 50; i++) b += `${(Math.random() * 100).toFixed(1)}vw ${(Math.random() * 110).toFixed(1)}vh 1px rgba(239,${50 + (Math.random() * 60 | 0)},${50 + (Math.random() * 40 | 0)},${(.07 + Math.random() * .2).toFixed(2)}),`;
   const st = document.createElement("style");
   st.textContent =
     `#stars::before{content:"";position:absolute;top:0;left:0;width:2px;height:2px;border-radius:50%;box-shadow:${a.slice(0, -1)};animation:drift 260s linear infinite}` +
-    `#stars::after{content:"";position:absolute;top:0;left:0;width:2px;height:2px;border-radius:50%;box-shadow:${b.slice(0, -1)};animation:drift 380s linear infinite reverse}`;
+    `#stars::after{content:"";position:absolute;top:0;left:0;width:2px;height:2px;border-radius:50%;box-shadow:${b.slice(0, -1)};animation:drift 390s linear infinite reverse}`;
   document.head.appendChild(st);
 })();
 
-/* ---------- graph ---------- */
+/* ---------- graph: layout was precomputed in Rust — zero physics here ---------- */
 const off = new Set();
-let matched = null;   // search result set
-let focusSet = null;  // clicked-neighborhood set
-let adj = null;
+let matched = null, focusSet = null, adj = null;
 
 const Graph = ForceGraph3D({ rendererConfig: { alpha: true, antialias: false, powerPreference: "high-performance" } })(document.getElementById("graph"))
   .backgroundColor("rgba(0,0,0,0)")
   .graphData(DATA)
-  .nodeLabel(n => n.group === "center" ? "memory core"
-    : n.group === "project" ? `project: ${n.label}`
-    : n.group === "session" ? `session ${n.label}`
-    : n.group === "coderoot" ? "code graph"
-    : `[${n.group}] ${n.ts || ""}\n${(n.snippet || "").slice(0, 120)}`)
+  .warmupTicks(0)
+  .cooldownTicks(0)
+  .enableNodeDrag(false)
+  .nodeLabel(() => "")
   .nodeVal(n => n.val)
   .nodeColor(n => {
     const base = COLORS[n.group] || "#8b949e";
     if (matched) return matched.has(n.id) ? "#ffffff" : base + "22";
-    if (focusSet) return focusSet.has(n.id) ? base : base + "1a";
+    if (focusSet) return focusSet.has(n.id) ? base : base + "18";
     return base;
   })
   .nodeOpacity(0.94)
@@ -230,33 +261,29 @@ const Graph = ForceGraph3D({ rendererConfig: { alpha: true, antialias: false, po
     if (focusSet) {
       const s = typeof l.source === "object" ? l.source.id : l.source;
       const t = typeof l.target === "object" ? l.target.id : l.target;
-      return (focusSet.has(s) && focusSet.has(t)) ? "#ffffffcc" : "#1e293b22";
+      return (focusSet.has(s) && focusSet.has(t)) ? "#ffffffcc" : "#20101422";
     }
-    return l.kind === "spine" ? "#f9731655"
+    return l.kind === "spine" ? "#ef444455"
       : l.kind === "wikilink" ? "#34d39988"
       : l.kind === "code" ? "#22d3ee55"
-      : l.kind === "tether" ? "#0ea5e914" : "#1e293b";
+      : l.kind === "tether" ? "#0ea5e912" : "#2a1418";
   })
-  .linkOpacity(0.35)
+  .linkOpacity(0.4)
   .linkWidth(l => l.kind === "spine" ? 1.2 : l.kind === "wikilink" ? 1.0 : l.kind === "code" ? 0.6 : 0.3)
   .linkDirectionalParticles(l => l.kind === "spine" ? 2 : l.kind === "wikilink" ? 1 : 0)
   .linkDirectionalParticleSpeed(0.004)
-  .linkDirectionalParticleWidth(1.6)
-  .warmupTicks(90)
-  .cooldownTicks(160)
+  .linkDirectionalParticleWidth(1.7)
+  .linkDirectionalParticleColor(l => l.kind === "spine" ? "#f87171" : "#6ee7b7")
   .onNodeHover(handleHover)
   .onNodeClick(handleClick)
-  .onBackgroundClick(clearFocus);
+  .onBackgroundClick(release);
 
 try { Graph.renderer().setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5)); } catch (e) {}
 window.addEventListener("resize", () => Graph.width(innerWidth).height(innerHeight));
 document.addEventListener("visibilitychange", () =>
   document.hidden ? Graph.pauseAnimation() : Graph.resumeAnimation());
 
-function restyle() {
-  Graph.nodeColor(Graph.nodeColor());
-  Graph.linkColor(Graph.linkColor());
-}
+function restyle() { Graph.nodeColor(Graph.nodeColor()); Graph.linkColor(Graph.linkColor()); }
 function buildAdj() {
   if (adj) return;
   adj = new Map();
@@ -268,8 +295,61 @@ function buildAdj() {
     adj.get(s).add(t); adj.get(t).add(s);
   }
 }
+const px = n => n.x ?? n.fx ?? 0, py = n => n.y ?? n.fy ?? 0, pz = n => n.z ?? n.fz ?? 0;
 
-/* hover: readout line + soft tick, throttled */
+/* ---------- the card: a circle that becomes text ---------- */
+const cardPos = document.getElementById("cardpos");
+const card = document.getElementById("card");
+let cardNode = null, pinned = false;
+function fillCard(node, full) {
+  const r = document.getElementById("c-role");
+  r.textContent = node.group;
+  r.style.background = COLORS[node.group] || "#8b949e";
+  document.getElementById("c-crumb").textContent =
+    `core ▸ ${node.project || node.group} ${node.session ? "▸ " + node.session : ""} ${node.ts ? "▸ " + node.ts : ""}`;
+  document.getElementById("c-txt").textContent =
+    full ? (node.snippet || node.label || "") : (node.snippet || node.label || "").slice(0, 110);
+  const words = (node.snippet || "").split(/\s+/).filter(w => w.length > 5).slice(0, 3).join(" ");
+  document.getElementById("c-cmd").innerHTML = `terminal: <code>cml search "${words.replace(/"/g, "")}"</code>`;
+}
+function showCard(node, pin) {
+  cardNode = node; pinned = pin;
+  fillCard(node, pin);
+  card.classList.add("show");
+  card.classList.toggle("pinned", pin);
+}
+function hideCard(force) {
+  if (pinned && !force) return;
+  pinned = false; cardNode = null;
+  card.classList.remove("show", "pinned");
+}
+document.getElementById("cardx").addEventListener("click", () => release());
+
+/* ---------- project labels pinned in space ---------- */
+const labelNodes = DATA.nodes.filter(n => n.group === "project" || n.group === "center" || n.group === "coderoot");
+const labels = labelNodes.map(n => {
+  const el = document.createElement("div");
+  el.className = "plabel" + (n.group === "center" ? " core" : n.group === "coderoot" ? " codeL" : "");
+  el.textContent = n.group === "center" ? "◉ core" : n.label;
+  el.addEventListener("click", () => { sfx.click(); focusOn(n); flyTo(n); });
+  document.body.appendChild(el);
+  return { n, el };
+});
+
+/* one tracker loop drives labels + card position */
+(function track() {
+  for (const L of labels) {
+    const c = Graph.graph2ScreenCoords(px(L.n), py(L.n), pz(L.n));
+    L.el.style.transform = `translate(${(c.x - L.el.offsetWidth / 2).toFixed(1)}px, ${(c.y - 30).toFixed(1)}px)`;
+  }
+  if (cardNode) {
+    const c = Graph.graph2ScreenCoords(px(cardNode), py(cardNode), pz(cardNode));
+    cardPos.style.transform = `translate(${c.x.toFixed(1)}px, ${c.y.toFixed(1)}px)`;
+  }
+  requestAnimationFrame(track);
+})();
+
+/* ---------- interactions ---------- */
 let lastHover = null, lastTick = 0;
 const readout = document.getElementById("readout");
 function handleHover(node) {
@@ -277,88 +357,113 @@ function handleHover(node) {
   if (node && node !== lastHover) {
     const now = performance.now();
     if (now - lastTick > 90) { sfx.hover(); lastTick = now; }
-    readout.textContent = node.group === "center" ? "▸ the core"
-      : node.group === "project" ? `▸ project · ${node.label}`
-      : node.group === "session" ? `▸ session ${node.label}`
-      : `▸ ${node.group} · ${node.ts || "?"} · ${node.project || ""}`;
+    readout.textContent = `▸ ${node.group}${node.project ? " · " + node.project : ""}${node.ts ? " · " + node.ts : ""}`;
+    if (!pinned) showCard(node, false);
   }
-  if (!node) readout.textContent = "";
+  if (!node) { readout.textContent = ""; hideCard(false); }
   lastHover = node;
 }
-
 function flyTo(node) {
-  const dist = 130;
-  const ratio = 1 + dist / Math.hypot(node.x || 1, node.y || 1, node.z || 1);
-  Graph.cameraPosition({ x: node.x * ratio, y: node.y * ratio, z: node.z * ratio }, node, 1300);
+  const x = px(node), y = py(node), z = pz(node);
+  const dist = 120;
+  const ratio = 1 + dist / Math.max(1, Math.hypot(x, y, z));
+  Graph.cameraPosition({ x: x * ratio, y: y * ratio, z: z * ratio }, { x, y, z }, 1300);
 }
-
-function handleClick(node) {
-  sfx.click();
-  orbiting = false;
+function focusOn(node) {
   buildAdj();
   focusSet = new Set([node.id, ...(adj.get(node.id) || [])]);
   restyle();
-  const d = document.getElementById("detail");
-  if (node.group === "center" || node.group === "project" || node.group === "session" || node.group === "coderoot") {
-    d.classList.remove("show"); flyTo(node); return;
-  }
-  d.classList.add("show");
-  const r = document.getElementById("d-role");
-  r.textContent = node.group;
-  r.style.background = COLORS[node.group] || "#8b949e";
-  document.getElementById("d-meta").textContent =
-    `${node.ts || "no date"} · ${node.project || ""} · session ${node.session || ""}`;
-  document.getElementById("d-snip").textContent = node.snippet || "";
-  const words = (node.snippet || "").split(/\s+/).filter(w => w.length > 5).slice(0, 3).join(" ");
-  document.getElementById("d-cmd").innerHTML =
-    `open in terminal: <code>cml search "${words.replace(/"/g, "")}"</code>`;
+}
+function handleClick(node) {
+  sfx.click(); orbiting = false;
+  focusOn(node);
+  const structural = node.group === "center" || node.group === "project" || node.group === "session" || node.group === "coderoot";
+  if (structural) { hideCard(true); flyTo(node); return; }
+  showCard(node, true);
   flyTo(node);
 }
-function clearFocus() {
-  if (!focusSet && !matched) return;
-  focusSet = null;
-  document.getElementById("detail").classList.remove("show");
-  restyle();
+function release() {
+  if (!focusSet && !matched && !pinned) return;
+  focusSet = null; hideCard(true); restyle();
 }
 
-/* auto-orbit with a gentle bob until the user takes the stick */
+/* auto-orbit until the user takes the stick */
 let angle = 0, orbiting = true;
 const orbit = setInterval(() => {
   if (!orbiting) return clearInterval(orbit);
   angle += Math.PI / 1100;
-  Graph.cameraPosition({ x: 760 * Math.sin(angle), y: 60 * Math.sin(angle * 2.3), z: 760 * Math.cos(angle) });
+  Graph.cameraPosition({ x: 780 * Math.sin(angle), y: 70 * Math.sin(angle * 2.3), z: 780 * Math.cos(angle) });
 }, 30);
 ["pointerdown", "wheel"].forEach(ev =>
   document.getElementById("graph").addEventListener(ev, () => { orbiting = false; }, { once: true }));
 
-/* synaptic idle firing: random pulses travel the network */
+/* synaptic idle firing */
 const leafLinks = DATA.links.filter(l => l.kind !== "tether");
 if (typeof Graph.emitParticle === "function" && leafLinks.length) {
   setInterval(() => {
     if (document.hidden) return;
-    for (let i = 0; i < 2; i++) {
-      const l = leafLinks[(Math.random() * leafLinks.length) | 0];
-      Graph.emitParticle(l);
-    }
+    for (let i = 0; i < 2; i++) Graph.emitParticle(leafLinks[(Math.random() * leafLinks.length) | 0]);
     if (Math.random() < 0.12) sfx.syn();
   }, 420);
 }
 
-/* chips */
-document.querySelectorAll(".chip").forEach(ch => ch.addEventListener("click", () => {
-  sfx.toggle();
-  const g = ch.dataset.g;
-  ch.classList.toggle("on");
-  ch.classList.contains("on") ? off.delete(g) : off.add(g);
-  Graph.nodeVisibility(Graph.nodeVisibility());
-  Graph.linkVisibility(Graph.linkVisibility());
-}));
+/* ---------- HUD: chips with counts, project nav, live search ---------- */
+const roleCounts = (DATA.stats && DATA.stats.roles) || {};
+const chipHost = document.getElementById("chips");
+for (const g of ["user", "assistant", "summary", "memory", "wiki", "code"]) {
+  const c = roleCounts[g];
+  if (g === "code" && !DATA.nodes.some(n => n.group === "code")) continue;
+  const el = document.createElement("span");
+  el.className = "chip on"; el.dataset.g = g;
+  el.textContent = c ? `${g} ${c >= 1000 ? (c / 1000).toFixed(1) + "k" : c}` : g;
+  el.addEventListener("click", () => {
+    sfx.toggle();
+    el.classList.toggle("on");
+    el.classList.contains("on") ? off.delete(g) : off.add(g);
+    Graph.nodeVisibility(Graph.nodeVisibility());
+    Graph.linkVisibility(Graph.linkVisibility());
+  });
+  chipHost.appendChild(el);
+}
+const nav = document.getElementById("projnav");
+const perProject = {};
+for (const n of DATA.nodes) if (n.project && n.group !== "project") perProject[n.project] = (perProject[n.project] || 0) + 1;
+for (const p of DATA.nodes.filter(n => n.group === "project" || n.group === "coderoot")) {
+  const row = document.createElement("div");
+  row.className = "pn";
+  row.innerHTML = `<span><span class="dot">${p.group === "coderoot" ? "⬡" : "⬢"}</span> ${p.label}</span><span class="n">${perProject[p.label] || perProject.code || ""}</span>`;
+  row.addEventListener("click", () => { sfx.click(); orbiting = false; focusOn(p); flyTo(p); });
+  nav.appendChild(row);
+}
 
-/* buttons */
+const q = document.getElementById("q");
+let debounce = null;
+function runSearch(fly) {
+  const s = q.value.trim().toLowerCase();
+  if (!s) { matched = null; restyle(); paintStats(); return; }
+  matched = new Set(DATA.nodes
+    .filter(n => (n.snippet || "").toLowerCase().includes(s) || (n.label || "").toLowerCase().includes(s))
+    .map(n => n.id));
+  restyle(); paintStats(matched.size);
+  if (fly) {
+    const first = DATA.nodes.find(n => matched.has(n.id) && n.group !== "project" && n.group !== "session");
+    if (first) { sfx.found(); orbiting = false; flyTo(first); } else sfx.none();
+  }
+}
+q.addEventListener("input", () => { clearTimeout(debounce); debounce = setTimeout(() => runSearch(false), 260); });
+q.addEventListener("keydown", e => {
+  e.stopPropagation();
+  if (e.key === "Escape") { q.value = ""; q.blur(); matched = null; restyle(); paintStats(); }
+  if (e.key === "Enter") runSearch(true);
+});
+document.addEventListener("keydown", e => {
+  if (e.key === "/" && document.activeElement !== q) { e.preventDefault(); q.focus(); }
+  if (e.key === "Escape") { matched = null; release(); restyle(); paintStats(); }
+});
+
 document.getElementById("b-view").addEventListener("click", () => {
-  sfx.click();
-  clearFocus(); matched = null; restyle();
-  Graph.cameraPosition({ x: 0, y: 80, z: 900 }, { x: 0, y: 0, z: 0 }, 1400);
+  sfx.click(); release(); matched = null; restyle(); paintStats();
+  Graph.cameraPosition({ x: 0, y: 120, z: 940 }, { x: 0, y: 0, z: 0 }, 1400);
 });
 const bSound = document.getElementById("b-sound");
 function paintSound() { bSound.textContent = soundOn ? "🔊 sound" : "🔇 muted"; }
@@ -369,29 +474,7 @@ bSound.addEventListener("click", () => {
   paintSound(); if (soundOn) sfx.toggle();
 });
 
-/* search */
-const q = document.getElementById("q");
-q.addEventListener("keydown", e => {
-  e.stopPropagation();
-  if (e.key === "Escape") { q.value = ""; q.blur(); matched = null; restyle(); paintStats(); return; }
-  if (e.key !== "Enter") return;
-  const s = q.value.trim().toLowerCase();
-  if (!s) { matched = null; restyle(); paintStats(); return; }
-  matched = new Set(DATA.nodes
-    .filter(n => (n.snippet || "").toLowerCase().includes(s) || (n.label || "").toLowerCase().includes(s))
-    .map(n => n.id));
-  restyle();
-  const first = DATA.nodes.find(n => matched.has(n.id) && n.group !== "project" && n.group !== "session");
-  if (first) { sfx.found(); orbiting = false; flyTo(first); } else { sfx.none(); }
-  paintStats(matched.size);
-});
-document.addEventListener("keydown", e => {
-  if (e.key === "/" && document.activeElement !== q) { e.preventDefault(); q.focus(); }
-  if (e.key === "Escape") { matched = null; clearFocus(); restyle(); paintStats(); }
-});
-document.getElementById("close").addEventListener("click", clearFocus);
-
-/* stats with count-up */
+/* ---------- stats + boot ---------- */
 function paintStats(extra) {
   const s = DATA.stats;
   document.getElementById("stats").innerHTML =
@@ -407,32 +490,30 @@ function paintStats(extra) {
     if (k < 1) requestAnimationFrame(tick); else paintStats();
   })(t0);
 })();
-
-/* boot sequence */
 (function boot() {
   const log = document.getElementById("bootlog");
   const lines = [
-    ["MEMORY CORE", `${DATA.stats.rows.toLocaleString()} nodes`],
+    ["CORE", "ULTRON-CLASS"],
+    ["MEMORY", `${DATA.stats.rows.toLocaleString()} nodes`],
     ["SYNAPSES", `${DATA.links.length.toLocaleString()} links`],
-    ["SESSIONS", `${DATA.stats.sessions} indexed`],
-    ["RENDER ENGINE", "vendored · offline"],
+    ["LAYOUT", "precomputed · rust · 0 physics"],
+    ["RENDER", "vendored · offline"],
     ["SYSTEM", "ONLINE"],
   ];
   let i = 0;
-  function next() {
+  (function next() {
     if (i < lines.length) {
       const [k, v] = lines[i++];
-      const pad = ".".repeat(Math.max(2, 18 - k.length));
-      log.innerHTML += `<span class="ok">▸</span> ${k} <span style="color:#30363d">${pad}</span> <span class="${i === lines.length ? "ok" : "val"}">${v}</span>\n`;
-      tone(700 + i * 140, .04, "square", .015);
-      setTimeout(next, 170 + Math.random() * 120);
+      const pad = ".".repeat(Math.max(2, 16 - k.length));
+      log.innerHTML += `<span class="ok">▸</span> ${k} <span style="color:#3a1418">${pad}</span> <span class="${i === lines.length ? "ok" : "val"}">${v}</span>\n`;
+      tone(600 + i * 130, .04, "square", .013);
+      setTimeout(next, 150 + Math.random() * 110);
     } else {
       log.innerHTML += '<span class="cursor"></span>';
       sfx.boot();
-      setTimeout(() => document.getElementById("loading").classList.add("off"), 480);
+      setTimeout(() => document.getElementById("loading").classList.add("off"), 450);
     }
-  }
-  setTimeout(next, 320);
+  })();
 })();
 </script>
 </body>

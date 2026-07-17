@@ -126,7 +126,7 @@ Your entire memory as a 3D force graph: projects orbit the center, sessions clus
 
 And if the repo you're standing in has a graphify knowledge graph, the map picks it up on its own: `graphify-out/graph.json` renders as a cyan code constellation next to your conversations — functions, files, and concepts in the same space as the sessions that wrote them. `--code <path>` points it anywhere, `--no-code` turns it off.
 
-It boots like a ship computer: a startup sequence, synthesized interface sounds (WebAudio oscillators, no audio files — mute button remembers your choice), idle synaptic pulses traveling the links, and click-to-focus that dims everything except a thought's neighborhood. Tuned for weak GPUs: capped pixel ratio, low-poly spheres, render pause when the tab hides.
+It boots like a ship computer: a startup sequence, synthesized interface sounds (WebAudio oscillators, no audio files — mute button remembers your choice), idle synaptic pulses traveling the links, hover cards that grow out of the node itself and pin into a full text block on click, floating project labels anchored in 3D space, and a project navigator with live counts. The layout is precomputed in Rust at generation time — deterministic radial shells, golden-angle distributed — so the browser runs **zero physics**: the brain appears fully formed in milliseconds. Tuned for weak GPUs beyond that: capped pixel ratio, low-poly spheres, render pause when the tab hides.
 
 One static HTML file with the render engine vendored in. Works offline, no CDN, no server. Generating 4,000+ nodes takes well under a second.
 
