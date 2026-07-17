@@ -530,6 +530,8 @@ fn wikilinks(text: &str) -> Vec<String> {
 fn map(args: &[String]) -> R<()> {
     let mut limit = 6000usize;
     let mut open = true;
+    let mut code_path: Option<PathBuf> = None;
+    let mut no_code = false;
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
@@ -538,9 +540,21 @@ fn map(args: &[String]) -> R<()> {
                 limit = args.get(i).and_then(|s| s.parse().ok()).unwrap_or(6000);
             }
             "--no-open" => open = false,
+            "--no-code" => no_code = true,
+            "--code" => {
+                i += 1;
+                code_path = args.get(i).map(PathBuf::from);
+            }
             _ => {}
         }
         i += 1;
+    }
+    // graphify integration: auto-detect the cwd's graph unless told otherwise
+    if code_path.is_none() && !no_code {
+        let auto = PathBuf::from("graphify-out/graph.json");
+        if auto.is_file() {
+            code_path = Some(auto);
+        }
     }
     let conn = open_db()?;
     let mut nodes: Vec<Value> =
@@ -611,6 +625,55 @@ fn map(args: &[String]) -> R<()> {
             }
         }
     }
+    let mut n_code = 0usize;
+    if let Some(cp) = &code_path {
+        match fs::read_to_string(cp).map_err(|e| e.to_string()).and_then(|s| {
+            serde_json::from_str::<Value>(&s).map_err(|e| e.to_string())
+        }) {
+            Ok(g) => {
+                const CODE_CAP: usize = 3000;
+                let root = format!(
+                    "code:{}",
+                    env::current_dir()
+                        .ok()
+                        .and_then(|d| d.file_name().map(|n| n.to_string_lossy().to_string()))
+                        .unwrap_or_else(|| "repo".into())
+                );
+                nodes.push(json!({"id":root,"group":"coderoot","label":"code","val":18}));
+                links.push(json!({"source":"center","target":root,"kind":"spine"}));
+                let mut kept: std::collections::HashSet<String> = std::collections::HashSet::new();
+                let empty = Vec::new();
+                let gnodes = g["nodes"].as_array().unwrap_or(&empty);
+                for n in gnodes.iter().take(CODE_CAP) {
+                    let Some(id) = n["id"].as_str() else { continue };
+                    let label = n["label"].as_str().unwrap_or(id);
+                    let ftype = n["file_type"].as_str().unwrap_or("code");
+                    let src = n["source_file"].as_str().unwrap_or("");
+                    kept.insert(id.to_string());
+                    nodes.push(json!({
+                        "id": format!("c:{id}"), "group": "code", "label": label,
+                        "snippet": format!("{label}\n[{ftype}] {src}"),
+                        "project": "code", "session": "", "ts": "", "val": 2.4
+                    }));
+                    links.push(json!({"source":root,"target":format!("c:{id}"),"kind":"tether"}));
+                    n_code += 1;
+                }
+                if gnodes.len() > CODE_CAP {
+                    println!("code graph capped at {CODE_CAP} of {} nodes", gnodes.len());
+                }
+                let gedges = g["edges"].as_array().or_else(|| g["links"].as_array()).unwrap_or(&empty);
+                for e in gedges {
+                    let (Some(s), Some(t)) = (e["source"].as_str(), e["target"].as_str()) else {
+                        continue;
+                    };
+                    if kept.contains(s) && kept.contains(t) {
+                        links.push(json!({"source":format!("c:{s}"),"target":format!("c:{t}"),"kind":"code"}));
+                    }
+                }
+            }
+            Err(e) => eprintln!("cml: could not read code graph {}: {e}", cp.display()),
+        }
+    }
     let n_nodes = nodes.len();
     let n_links = links.len();
     let db = data_dir().join("index.db");
@@ -629,7 +692,7 @@ fn map(args: &[String]) -> R<()> {
     let out = data_dir().join("map.html");
     fs::write(&out, &html)?;
     println!(
-        "map: {} ({n_nodes} nodes, {n_links} links, {:.1} MB)",
+        "map: {} ({n_nodes} nodes, {n_links} links, {n_code} code, {:.1} MB)",
         out.display(),
         html.len() as f64 / 1e6
     );

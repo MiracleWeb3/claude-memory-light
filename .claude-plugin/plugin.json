@@ -1,6 +1,6 @@
 {
   "name": "claude-memory-light",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Full session memory for Claude Code. Indexes the transcripts you already have into SQLite FTS5, adds a learning loop and a wiki. One Rust binary, no daemons, no LLM calls.",
   "author": {
     "name": "MiracleWeb3",

@@ -38,6 +38,7 @@
   .chip[data-g="summary"].on { background: var(--summary); }
   .chip[data-g="memory"].on { background: var(--memory); }
   .chip[data-g="wiki"].on { background: var(--wiki); }
+  .chip[data-g="code"].on { background: #22d3ee; }
   #hint { color: var(--dim); font-size: 11px; margin-top: 10px; }
   #detail { right: 16px; top: 16px; width: 360px; display: none; max-height: calc(100vh - 32px); overflow: auto; }
   #detail .role { display: inline-block; border-radius: 6px; padding: 2px 8px; font-size: 11px; font-weight: 700; color: #05060a; }
@@ -68,6 +69,7 @@
     <span class="chip on" data-g="summary">summary</span>
     <span class="chip on" data-g="memory">memory</span>
     <span class="chip on" data-g="wiki">wiki</span>
+    <span class="chip on" data-g="code">code</span>
   </div>
   <div id="hint">drag to orbit · scroll to zoom · click a node for details</div>
 </div>
@@ -93,7 +95,7 @@ const DATA = window.CML_GRAPH;
 const COLORS = {
   center: "#f97316", project: "#f59e0b", session: "#64748b",
   user: "#fb923c", assistant: "#60a5fa", summary: "#94a3b8",
-  memory: "#34d399", wiki: "#c084fc"
+  memory: "#34d399", wiki: "#c084fc", code: "#22d3ee", coderoot: "#0ea5e9"
 };
 const off = new Set();
 let matched = null;
@@ -119,9 +121,12 @@ const Graph = ForceGraph3D()(document.getElementById("graph"))
     const t = typeof l.target === "object" ? l.target : { group: "" };
     return !(off.has(s.group) || off.has(t.group));
   })
-  .linkColor(l => l.kind === "spine" ? "#f9731655" : l.kind === "wikilink" ? "#34d39988" : "#1e293b")
+  .linkColor(l => l.kind === "spine" ? "#f9731655"
+    : l.kind === "wikilink" ? "#34d39988"
+    : l.kind === "code" ? "#22d3ee55"
+    : l.kind === "tether" ? "#0ea5e914" : "#1e293b")
   .linkOpacity(0.35)
-  .linkWidth(l => l.kind === "spine" ? 1.2 : l.kind === "wikilink" ? 1.0 : 0.3)
+  .linkWidth(l => l.kind === "spine" ? 1.2 : l.kind === "wikilink" ? 1.0 : l.kind === "code" ? 0.6 : 0.3)
   .linkDirectionalParticles(l => l.kind === "spine" ? 2 : l.kind === "wikilink" ? 1 : 0)
   .linkDirectionalParticleSpeed(0.004)
   .linkDirectionalParticleWidth(1.6)
