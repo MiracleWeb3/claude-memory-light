@@ -9,8 +9,9 @@
 // Design law (learned from claude-mem's issue tracker): a memory hook must NEVER
 // block or break the session. Every hook-facing subcommand exits 0 no matter what.
 
-use rusqlite::{params, params_from_iter, Connection};
+use rusqlite::{params, Connection};
 use serde_json::{json, Value};
+use zerocopy::AsBytes;
 use std::env;
 use std::error::Error;
 use std::fs;
@@ -53,6 +54,13 @@ fn project_label(dirname: &str) -> String {
 }
 
 fn open_db() -> R<Connection> {
+    // register sqlite-vec once, before any connection opens
+    static VEC_INIT: std::sync::Once = std::sync::Once::new();
+    VEC_INIT.call_once(|| unsafe {
+        rusqlite::ffi::sqlite3_auto_extension(Some(std::mem::transmute(
+            sqlite_vec::sqlite3_vec_init as *const (),
+        )));
+    });
     let dir = data_dir();
     fs::create_dir_all(&dir)?;
     fs::create_dir_all(dir.join("wiki"))?;
@@ -190,6 +198,10 @@ fn index_transcripts(conn: &mut Connection, force: bool) -> R<(usize, usize)> {
                 .to_string_lossy()
                 .to_string();
             let tx = conn.transaction()?;
+            let _ = tx.execute(
+                "DELETE FROM vec_mem WHERE rowid IN (SELECT rowid FROM mem WHERE file=?1)",
+                params![pstr],
+            );
             tx.execute("DELETE FROM mem WHERE file=?1", params![pstr])?;
             let reader = BufReader::new(fs::File::open(&path)?);
             let mut n = 0usize;
@@ -272,6 +284,10 @@ fn index_md_dir(conn: &mut Connection, dir: &Path, role: &str, project: &str, fo
             continue;
         };
         let tx = conn.transaction()?;
+        let _ = tx.execute(
+            "DELETE FROM vec_mem WHERE rowid IN (SELECT rowid FROM mem WHERE file=?1)",
+            params![pstr],
+        );
         tx.execute("DELETE FROM mem WHERE file=?1", params![pstr])?;
         if !text.trim().is_empty() {
             tx.execute(
@@ -304,8 +320,16 @@ fn index(force: bool) -> R<()> {
         }
     }
     let (wf, wr) = index_md_dir(&mut conn, &data_dir().join("wiki"), "wiki", "wiki", force)?;
+    // incremental semantic pass — only once `cml embed` has initialized the vector table,
+    // so a hook never triggers a model download
+    let mut embedded = 0usize;
+    if vec_table_exists(&conn) {
+        if let Ok(model) = embedder() {
+            embedded = embed_new(&conn, &model).unwrap_or(0);
+        }
+    }
     println!(
-        "indexed {} file(s), {} row(s)  [transcripts {tf}/{tr}, memory {mf}/{mr}, wiki {wf}/{wr}]",
+        "indexed {} file(s), {} row(s), {embedded} embedded  [transcripts {tf}/{tr}, memory {mf}/{mr}, wiki {wf}/{wr}]",
         tf + mf + wf,
         tr + mr + wr
     );
@@ -318,6 +342,8 @@ fn search(args: &[String]) -> R<()> {
     let mut limit = 12usize;
     let mut project: Option<String> = None;
     let mut role: Option<String> = None;
+    let mut semantic_only = false;
+    let mut keyword_only = false;
     let mut terms: Vec<String> = Vec::new();
     let mut i = 0;
     while i < args.len() {
@@ -334,59 +360,187 @@ fn search(args: &[String]) -> R<()> {
                 i += 1;
                 role = args.get(i).cloned();
             }
+            "--semantic" => semantic_only = true,
+            "--keyword" => keyword_only = true,
             t => terms.push(t.to_string()),
         }
         i += 1;
     }
     if terms.is_empty() {
-        return Err("usage: cml search <terms> [--project P] [--role user|assistant|summary|memory|wiki] [--limit N]".into());
-    }
-    let q = terms
-        .iter()
-        .map(|t| format!("\"{}\"", t.replace('"', "\"\"")))
-        .collect::<Vec<_>>()
-        .join(" ");
-    let mut wheres = vec!["mem MATCH ?".to_string()];
-    let mut binds: Vec<String> = vec![q.clone()];
-    if let Some(p) = &project {
-        wheres.push("project LIKE ?".to_string());
-        binds.push(format!("%{p}%"));
-    }
-    if let Some(r) = &role {
-        wheres.push("role = ?".to_string());
-        binds.push(r.clone());
+        return Err("usage: cml search <terms> [--project P] [--role R] [--limit N] [--semantic|--keyword]".into());
     }
     let conn = open_db()?;
-    let sql = format!(
-        "SELECT ts, role, project, session, snippet(mem, 0, '[', ']', ' … ', 16)
-         FROM mem WHERE {} ORDER BY rank LIMIT {}",
-        wheres.join(" AND "),
-        limit
-    );
-    let mut stmt = conn.prepare(&sql)?;
-    let rows: Vec<String> = stmt
-        .query_map(params_from_iter(binds.iter()), |r| {
-            let ts: String = r.get(0)?;
-            let role: String = r.get(1)?;
-            let proj: String = r.get(2)?;
-            let sess: String = r.get(3)?;
-            let snip: String = r.get(4)?;
-            let snip = snip.split_whitespace().collect::<Vec<_>>().join(" ");
-            let date = if ts.len() >= 10 {
-                ts.chars().take(10).collect::<String>()
-            } else {
-                "no-date   ".to_string()
-            };
-            let sid: String = sess.chars().take(8).collect();
-            Ok(format!("{date} {role:<9} {proj:<14} {sid} | {snip}"))
-        })?
+
+    // keyword leg: FTS5 BM25
+    let fts_hits: Vec<i64> = if semantic_only {
+        Vec::new()
+    } else {
+        let q = terms
+            .iter()
+            .map(|t| format!("\"{}\"", t.replace('"', "\"\"")))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let mut stmt =
+            conn.prepare("SELECT rowid FROM mem WHERE mem MATCH ?1 ORDER BY rank LIMIT 60")?;
+        let ids: Vec<i64> = stmt
+            .query_map(params![q], |r| r.get(0))?
+            .collect::<rusqlite::Result<_>>()?;
+        ids
+    };
+
+    // semantic leg: local embeddings + sqlite-vec KNN. Hybrid by default once `cml embed` ran.
+    let vec_hits: Vec<i64> = if keyword_only || !vec_table_exists(&conn) {
+        if semantic_only {
+            return Err("semantic index missing — run `cml embed` once to build it".into());
+        }
+        Vec::new()
+    } else {
+        match embedder() {
+            Ok(model) => {
+                let q_emb = model.encode(&[terms.join(" ")]);
+                let mut stmt = conn.prepare(
+                    "SELECT rowid FROM vec_mem WHERE embedding MATCH ?1 AND k = ?2 ORDER BY distance",
+                )?;
+                let ids: Vec<i64> = stmt
+                    .query_map(params![q_emb[0].as_bytes(), 60i64], |r| r.get(0))?
+                    .collect::<rusqlite::Result<_>>()?;
+                ids
+            }
+            Err(e) => {
+                if semantic_only {
+                    return Err(e);
+                }
+                Vec::new()
+            }
+        }
+    };
+
+    // reciprocal rank fusion across both legs
+    let mut score: std::collections::HashMap<i64, f64> = std::collections::HashMap::new();
+    for (i, id) in fts_hits.iter().enumerate() {
+        *score.entry(*id).or_default() += 1.0 / (60.0 + i as f64);
+    }
+    for (i, id) in vec_hits.iter().enumerate() {
+        *score.entry(*id).or_default() += 1.0 / (60.0 + i as f64);
+    }
+    let mut ranked: Vec<(i64, f64)> = score.into_iter().collect();
+    ranked.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+    let mut fetch = conn.prepare(
+        "SELECT ts, role, project, session, substr(text,1,170) FROM mem WHERE rowid=?1",
+    )?;
+    let mut printed = 0usize;
+    for (rowid, _) in &ranked {
+        if printed >= limit {
+            break;
+        }
+        let row = fetch.query_row(params![rowid], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, String>(3)?,
+                r.get::<_, String>(4)?,
+            ))
+        });
+        let Ok((ts, rrole, proj, sess, snip)) = row else {
+            continue;
+        };
+        if let Some(p) = &project {
+            if !proj.to_lowercase().contains(&p.to_lowercase()) {
+                continue;
+            }
+        }
+        if let Some(want) = &role {
+            if &rrole != want {
+                continue;
+            }
+        }
+        let snip = snip.split_whitespace().collect::<Vec<_>>().join(" ");
+        let date: String = if ts.len() >= 10 {
+            ts.chars().take(10).collect()
+        } else {
+            "no-date   ".into()
+        };
+        let sid: String = sess.chars().take(8).collect();
+        println!("{date} {rrole:<9} {proj:<14} {sid} | {snip}");
+        printed += 1;
+    }
+    if printed == 0 {
+        println!(
+            "no hits for: {} ({})",
+            terms.join(" "),
+            if vec_hits.is_empty() { "keyword" } else { "hybrid" }
+        );
+    }
+    Ok(())
+}
+
+// ---------- semantic: local embeddings (model2vec) + sqlite-vec, zero API calls ----------
+
+const EMBED_CHARS: i64 = 2000;
+
+/// Default is tiny + fast; CML_EMBED_MODEL swaps in e.g. potion-base-32M (better recall)
+/// or potion-multilingual-128M (non-English) — then run `cml embed --all` to rebuild.
+fn embed_model_id() -> String {
+    env::var("CML_EMBED_MODEL").unwrap_or_else(|_| "minishlab/potion-base-8M".into())
+}
+
+fn embedder() -> R<model2vec_rs::model::StaticModel> {
+    model2vec_rs::model::StaticModel::from_pretrained(&embed_model_id(), None, Some(true), None)
+        .map_err(|e| format!("embedding model unavailable ({e}); run `cml embed` with network once").into())
+}
+
+fn vec_table_exists(conn: &Connection) -> bool {
+    conn.query_row(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='vec_mem'",
+        [],
+        |_| Ok(()),
+    )
+    .is_ok()
+}
+
+/// Embed every mem row that has no vector yet, in batches. Returns how many were embedded.
+fn embed_new(conn: &Connection, model: &model2vec_rs::model::StaticModel) -> R<usize> {
+    let rows: Vec<(i64, String)> = conn
+        .prepare(
+            "SELECT rowid, substr(text,1,?1) FROM mem
+             WHERE rowid NOT IN (SELECT rowid FROM vec_mem)",
+        )?
+        .query_map(params![EMBED_CHARS], |r| Ok((r.get(0)?, r.get(1)?)))?
         .collect::<rusqlite::Result<_>>()?;
     if rows.is_empty() {
-        println!("no hits for: {q}");
+        return Ok(0);
     }
-    for row in &rows {
-        println!("{row}");
+    let mut ins = conn.prepare("INSERT INTO vec_mem(rowid, embedding) VALUES (?1, ?2)")?;
+    for chunk in rows.chunks(256) {
+        let texts: Vec<String> = chunk.iter().map(|(_, t)| t.clone()).collect();
+        let embs = model.encode(&texts);
+        for ((rowid, _), emb) in chunk.iter().zip(embs.iter()) {
+            ins.execute(params![rowid, emb.as_bytes()])?;
+        }
     }
+    Ok(rows.len())
+}
+
+fn embed_cmd(args: &[String]) -> R<()> {
+    let conn = open_db()?;
+    if args.iter().any(|a| a == "--all") && vec_table_exists(&conn) {
+        conn.execute_batch("DROP TABLE vec_mem;")?;
+    }
+    let model = embedder()?;
+    let dim = model.encode(&["init".to_string()])[0].len();
+    conn.execute_batch(&format!(
+        "CREATE VIRTUAL TABLE IF NOT EXISTS vec_mem USING vec0(embedding float[{dim}]);"
+    ))?;
+    let t0 = std::time::Instant::now();
+    let n = embed_new(&conn, &model)?;
+    let total: i64 = conn.query_row("SELECT count(*) FROM vec_mem", [], |r| r.get(0))?;
+    println!(
+        "embedded {n} new row(s) in {:.1}s ({total} total, {dim}-dim, {})",
+        t0.elapsed().as_secs_f32(),
+        embed_model_id()
+    );
     Ok(())
 }
 
@@ -741,6 +895,16 @@ fn doctor() -> R<()> {
         "graphify        : {} (optional structural-memory companion)",
         graphify.as_deref().unwrap_or("not installed")
     );
+    {
+        let conn = open_db()?;
+        if vec_table_exists(&conn) {
+            let v: i64 = conn.query_row("SELECT count(*) FROM vec_mem", [], |r| r.get(0))?;
+            let m: i64 = conn.query_row("SELECT count(*) FROM mem", [], |r| r.get(0))?;
+            println!("semantic        : {v}/{m} rows embedded ({})", embed_model_id());
+        } else {
+            println!("semantic        : off — run `cml embed` once to enable hybrid search");
+        }
+    }
     println!("hint: keep transcripts forever with \"cleanupPeriodDays\": 3650 in ~/.claude/settings.json");
     if db.is_file() {
         stats()?;
@@ -784,8 +948,9 @@ fn main() {
         Some("stats") => stats(),
         Some("doctor") => doctor(),
         Some("map") => map(&args[1..]),
+        Some("embed") => embed_cmd(&args[1..]),
         _ => Err(
-            "usage: cml index [--all] | search <terms> [--project P] [--role R] [--limit N] | map [--limit N] [--no-open] | stats | doctor | capture | nudge"
+            "usage: cml index [--all] | search <terms> [--project P] [--role R] [--limit N] [--semantic|--keyword] | embed [--all] | map [--limit N] [--no-open] | stats | doctor | capture | nudge"
                 .into(),
         ),
     };

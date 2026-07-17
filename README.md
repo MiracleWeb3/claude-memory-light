@@ -41,7 +41,7 @@ The second hit in the demo below is real. The first thing this tool found on my 
 
 |   |   |
 |---|---|
-| 🔍 **full-history search** | every message of every session, ranked FTS5, results in milliseconds |
+| 🔍 **hybrid search** | every message of every session — FTS5 keywords + local semantic vectors, fused, milliseconds |
 | 🧠 **learning loop** | per-turn signals collected into an inbox, consolidated into memory Claude actually loads |
 | 📖 **personal wiki** | one markdown page per topic, edited in place, Obsidian-compatible, same index |
 | 🌌 **3d memory map** | `cml map` renders your whole memory as an interactive galaxy — one offline HTML file |
@@ -151,23 +151,25 @@ claude-mem is the popular one, and it works for plenty of people. It also runs a
 | RAM at rest | ✅ 0 | ❌ 50 MB and up, leak reports exist |
 | hook failure mode | ✅ exit 0, session unaffected | ❌ can block all prompts |
 | works on subscription plans | ✅ that's the point | ⚠️ author says hold off |
-| search | ⚠️ FTS5 keyword | ✅ FTS5 + vector |
+| search | ✅ hybrid: FTS5 + local vectors | ✅ FTS5 + vector (Chroma) |
+| vector stack | ✅ [sqlite-vec](https://github.com/asg017/sqlite-vec) in the same db file, 30 MB local model | ❌ Python + Chroma process |
 
-Vector search is the one real feature gap. FTS5 with Porter stemming has covered everything I've asked of it so far. If it stops being enough, [sqlite-vec](https://github.com/asg017/sqlite-vec) drops into the same database file without a daemon, and that's the planned path.
+The vector gap is closed, and it stayed on-principle: embeddings come from a local [Model2Vec](https://github.com/MinishLab/model2vec-rs) static model (~30 MB, downloads once, then offline), vectors live in the same SQLite file via sqlite-vec, and search fuses BM25 with KNN using reciprocal rank fusion. Run `cml embed` once to turn it on; after that the Stop hook embeds new rows incrementally. Still zero API calls, still no daemon, still one file you own.
 
 ## 🧰 cli
 
 | command | what it does |
 |---|---|
 | `cml index [--all]` | incremental (or full) reindex of transcripts, memory notes, wiki |
-| `cml search <terms> [--project P] [--role R] [--limit N]` | ranked search |
+| `cml search <terms> [--project P] [--role R] [--limit N] [--semantic\|--keyword]` | hybrid ranked search |
+| `cml embed [--all]` | build (or rebuild) the semantic index — one-time init, then automatic |
 | `cml map [--limit N] [--code G] [--no-code] [--no-open]` | build + open the 3D memory map |
 | `cml stats` | row counts, DB size |
 | `cml doctor` | environment check, graphify detection |
 | `cml capture` | *(hook)* append turn's user message to the learning inbox |
 | `cml nudge` | *(hook)* consolidation reminder once signals pile up |
 
-<kbd>CML_HOME</kbd> moves the data directory (default `~/.claude/claude-memory-light`). <kbd>CML_NUDGE_THRESHOLD</kbd> tunes the nudge, default 5.
+<kbd>CML_HOME</kbd> moves the data directory (default `~/.claude/claude-memory-light`). <kbd>CML_NUDGE_THRESHOLD</kbd> tunes the nudge, default 5. <kbd>CML_EMBED_MODEL</kbd> swaps the embedding model — `minishlab/potion-base-32M` for better recall, `minishlab/potion-multilingual-128M` for non-English corpora; run `cml embed --all` after switching.
 
 ## ❓ faq
 
@@ -188,10 +190,10 @@ Zero. Indexing and search are pure SQLite. Nothing in the hook path calls a mode
 </details>
 
 <details>
-<summary><b>what about semantic search?</b></summary>
+<summary><b>how does semantic search work without an API?</b></summary>
 <br/>
 
-Planned as an opt-in via sqlite-vec, same database file, still no daemon. FTS5 with stemming gets further than you'd expect; try it before assuming you need embeddings.
+A Model2Vec static embedding model (~30 MB) runs locally — it's a lookup table plus mean pooling, so embedding is effectively instant even on weak hardware. Vectors sit in a sqlite-vec table inside the same index.db. `cml embed` builds it once (needs network for the one-time model download); after that everything is offline. Queries run both legs — BM25 and KNN — and fuse the rankings. `--keyword` or `--semantic` forces a single leg.
 
 </details>
 
@@ -218,7 +220,7 @@ About 11 MB for 50 sessions / 4,000 messages on my machine. SQLite FTS5 handles 
 - [x] plugin packaging, prebuilt binaries
 - [x] 3d memory map with wikilink edges, offline, single file
 - [x] code-graph layer: graphify's `graph.json` renders in the same map
-- [ ] `sqlite-vec` semantic search, opt-in, same file, no daemon
+- [x] `sqlite-vec` semantic search — local Model2Vec embeddings, hybrid RRF, same file, no daemon
 - [ ] optional end-of-session digests (batched, single call, opt-in)
 - [ ] windows support
 

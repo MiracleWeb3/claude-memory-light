@@ -1,0 +1,7 @@
+{
+  "tool_name": "Bash",
+  "tool_input_preview": "{\"command\":\"cargo build --release 2>&1 | grep -E \\\"^error|Finished\\\" | head -3 && cp target/release/cml ~/.local/bin/cml && ls -lh ~/.local/bin/cml | awk '{print $5}' && echo \\\"=== keyword-only baseli...",
+  "error": "Exit code 1\nerror[E0597]: `stmt` does not live long enough\nerror[E0597]: `stmt` does not live long enough\nerror: could not compile `claude-memory-light` (bin \"cml\") due to 2 previous errors\n3,8M\n=== keyword-only baseline: phrase absent from corpus ===\nno hits for: \"laptop pointing device misbehaving\" \"--keyword\"\n=== embed: download model + backfill all rows ===\ncml: usage: cml index [--all] | search <terms> [--project P] [--role R] [--limit N] | map [--limit N] [--no-open] | stats | doctor | cap...",
+  "timestamp": "2026-07-17T16:30:38.246Z",
+  "retry_count": 1
+}

@@ -1,6 +1,6 @@
 ---
 description: full-history memory — search past sessions, stats, doctor, reindex
-argument-hint: search <terms> [--project P] [--role R] | map | stats | doctor | index [--all]
+argument-hint: search <terms> [--project P] [--role R] [--semantic|--keyword] | embed | map | stats | doctor | index [--all]
 ---
 
 Run the claude-memory-light binary with the user's arguments:

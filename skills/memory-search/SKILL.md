@@ -12,8 +12,9 @@ Binary resolution: `cml` on PATH, or `~/.claude/claude-memory-light/bin/cml` (th
 ## Recall protocol
 
 1. `cml search "<keywords>" [--project <substr>] [--role user|assistant|summary|memory|wiki] [--limit N]`
-   - Keywords are AND-ed and Porter-stemmed. Output: `date role project session8 | snippet`.
-   - No hits ≠ not found: try 2-3 DIFFERENT keyword sets (synonyms, error text, filenames) before concluding anything.
+   - Hybrid by default: FTS5 keywords + local semantic vectors, rank-fused. Semantic recall means paraphrases hit too — describe the CONCEPT if exact words are unknown.
+   - `--keyword` forces exact FTS5 only; `--semantic` forces vectors only. If it reports the semantic index is missing, run `cml embed` once (downloads a 30 MB local model, no API).
+   - No hits ≠ not found: try 2-3 DIFFERENT phrasings before concluding anything.
 2. Full context around a transcript hit: open `~/.claude/projects/<project-dir>/<session>*.jsonl` (glob the 8-char session prefix) and grep near the snippet text.
 3. `cml stats` — coverage. `cml index` — manual refresh. `cml index --all` — full rebuild (index is disposable; transcripts are the source of truth).
 4. `cml map` — render the whole memory as an interactive 3D graph (one offline HTML file, opens in browser). Use when the user asks to "see", "visualize", or "map" their memory.
