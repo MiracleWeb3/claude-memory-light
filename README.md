@@ -167,6 +167,7 @@ The vector gap is closed, and it stayed on-principle: embeddings come from a loc
 | `cml index [--all]` | incremental (or full) reindex of transcripts, memory notes, wiki |
 | `cml search <terms> [--project P] [--role R] [--limit N] [--semantic\|--keyword]` | hybrid ranked search |
 | `cml embed [--all]` | build (or rebuild) the semantic index — one-time init, then automatic |
+| `cml forget <rowid...>` \| `--match "<q>" [--yes]` | purge junk memories, blocklisted so reindexing never resurrects them (`--clear` undoes) |
 | `cml map [--limit N] [--code G] [--no-code] [--no-open]` | build + open the 3D memory map |
 | `cml stats` | row counts, DB size |
 | `cml doctor` | environment check, graphify detection |

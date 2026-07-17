@@ -75,6 +75,7 @@ fn open_db() -> R<Connection> {
         "PRAGMA journal_mode=WAL;
          PRAGMA synchronous=NORMAL;
          CREATE TABLE IF NOT EXISTS files(path TEXT PRIMARY KEY, size INTEGER, mtime INTEGER);
+         CREATE TABLE IF NOT EXISTS forgotten(key TEXT PRIMARY KEY);
          CREATE VIRTUAL TABLE IF NOT EXISTS mem USING fts5(
              text, role UNINDEXED, project UNINDEXED, session UNINDEXED,
              ts UNINDEXED, file UNINDEXED, tokenize='porter unicode61');",
@@ -129,6 +130,22 @@ fn text_of(content: &Value) -> String {
     }
 }
 
+/// Content-stable identity for a message, so forgetting survives re-indexing
+/// (rowids change when a transcript file is re-parsed; this key doesn't).
+fn stable_key(session: &str, ts: &str, role: &str, text: &str) -> String {
+    let head: String = text.chars().take(64).collect();
+    format!("{session}|{ts}|{role}|{head}")
+}
+
+fn forgotten_set(conn: &Connection) -> std::collections::HashSet<String> {
+    conn.prepare("SELECT key FROM forgotten")
+        .and_then(|mut s| {
+            s.query_map([], |r| r.get::<_, String>(0))
+                .map(|rows| rows.flatten().collect())
+        })
+        .unwrap_or_default()
+}
+
 fn is_noise(text: &str) -> bool {
     let t = text.trim_start();
     t.is_empty()
@@ -175,6 +192,7 @@ fn unchanged(conn: &Connection, fm: &FileMeta) -> bool {
 }
 
 fn index_transcripts(conn: &mut Connection, force: bool) -> R<(usize, usize)> {
+    let blocked = forgotten_set(conn);
     let projects = home().join(".claude/projects");
     let (mut nf, mut nr) = (0usize, 0usize);
     let entries = match fs::read_dir(&projects) {
@@ -241,6 +259,9 @@ fn index_transcripts(conn: &mut Connection, force: bool) -> R<(usize, usize)> {
                         continue;
                     }
                     let sid = v["sessionId"].as_str().unwrap_or(&session_fallback);
+                    if !blocked.is_empty() && blocked.contains(&stable_key(sid, &ts, &role, &text)) {
+                        continue;
+                    }
                     ins.execute(params![text, role, project, sid, ts, pstr])?;
                     n += 1;
                 }
@@ -987,6 +1008,7 @@ fn map(args: &[String]) -> R<()> {
     let html = include_str!("map.html")
         .replace("/*%%PAYLOAD%%*/ null", &payload)
         .replace("/*%%THREE%%*/", include_str!("vendor/three.module.js"))
+        .replace("/*%%CONTROLS%%*/", include_str!("vendor/OrbitControls.js"))
         .replace("/*%%APP%%*/", include_str!("app.js"));
     let out = data_dir().join("map.html");
     fs::write(&out, &html)?;
@@ -998,6 +1020,84 @@ fn map(args: &[String]) -> R<()> {
     if open {
         let _ = std::process::Command::new("xdg-open").arg(&out).spawn();
     }
+    Ok(())
+}
+
+// ---------- forget: purge junk from the brain, permanently ----------
+
+fn forget(args: &[String]) -> R<()> {
+    let conn = open_db()?;
+    if args.iter().any(|a| a == "--clear") {
+        let n = conn.execute("DELETE FROM forgotten", [])?;
+        println!("blocklist cleared ({n} keys) — run `cml index --all` to resurrect those rows");
+        return Ok(());
+    }
+    let yes = args.iter().any(|a| a == "--yes");
+    let mut rowids: Vec<i64> = Vec::new();
+    if let Some(mi) = args.iter().position(|a| a == "--match") {
+        let Some(qraw) = args.get(mi + 1) else {
+            return Err("usage: cml forget --match \"<query>\" [--yes]".into());
+        };
+        let q = qraw
+            .split_whitespace()
+            .map(|t| format!("\"{}\"", t.replace('"', "\"\"")))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let mut stmt = conn.prepare(
+            "SELECT rowid, role, project, ts, substr(text,1,90) FROM mem WHERE mem MATCH ?1 ORDER BY rowid",
+        )?;
+        let rows: Vec<(i64, String, String, String, String)> = stmt
+            .query_map(params![q], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
+            })?
+            .collect::<rusqlite::Result<_>>()?;
+        if rows.is_empty() {
+            println!("no rows match: {qraw}");
+            return Ok(());
+        }
+        for (id, role, proj, ts, snip) in &rows {
+            let snip = snip.split_whitespace().collect::<Vec<_>>().join(" ");
+            println!("{id:>7} {role:<9} {proj:<14} {} | {snip}", ts.chars().take(10).collect::<String>());
+        }
+        if !yes {
+            println!("---\n{} row(s) matched — re-run with --yes to forget them", rows.len());
+            return Ok(());
+        }
+        rowids = rows.into_iter().map(|r| r.0).collect();
+    } else {
+        for a in args {
+            if let Ok(id) = a.parse::<i64>() {
+                rowids.push(id);
+            }
+        }
+        if rowids.is_empty() {
+            return Err("usage: cml forget <rowid...> | --match \"<query>\" [--yes] | --clear".into());
+        }
+    }
+    let mut n = 0usize;
+    for id in &rowids {
+        let row = conn.query_row(
+            "SELECT session, ts, role, substr(text,1,64) FROM mem WHERE rowid=?1",
+            params![id],
+            |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, String>(2)?,
+                    r.get::<_, String>(3)?,
+                ))
+            },
+        );
+        let Ok((session, ts, role, head)) = row else { continue };
+        conn.execute(
+            "INSERT OR IGNORE INTO forgotten(key) VALUES (?1)",
+            params![stable_key(&session, &ts, &role, &head)],
+        )?;
+        let _ = conn.execute("DELETE FROM vec_mem WHERE rowid=?1", params![id]);
+        conn.execute("DELETE FROM mem WHERE rowid=?1", params![id])?;
+        n += 1;
+    }
+    println!("forgot {n} row(s) — blocklisted so they never come back (undo: cml forget --clear)");
     Ok(())
 }
 
@@ -1094,8 +1194,9 @@ fn main() {
         Some("doctor") => doctor(),
         Some("map") => map(&args[1..]),
         Some("embed") => embed_cmd(&args[1..]),
+        Some("forget") => forget(&args[1..]),
         _ => Err(
-            "usage: cml index [--all] | search <terms> [--project P] [--role R] [--limit N] [--semantic|--keyword] | embed [--all] | map [--limit N] [--no-open] | stats | doctor | capture | nudge"
+            "usage: cml index [--all] | search <terms> [--project P] [--role R] [--limit N] [--semantic|--keyword] | forget <rowid...> | forget --match \"<q>\" [--yes] | embed [--all] | map [--limit N] [--no-open] | stats | doctor | capture | nudge"
                 .into(),
         ),
     };

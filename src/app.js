@@ -168,76 +168,48 @@ const ring = new Mesh(sphereGeo, new MeshBasicMaterial({ wireframe: true, color:
 ring.visible = false; scene.add(ring);
 
 /* ---------- orbit controls, hand-rolled: drag orbits, wheel zooms ---------- */
-/* direct-drive orbit: rotation follows the hand 1:1 with a short inertia tail,
-   wheel zooms TOWARD the cursor, right/middle drag pans. */
-const ctrl = { dist: 800, theta: 0.55, phi: 1.12, target: new Vector3(), vt: 0, vp: 0 };
-let interacted = false, dragging = 0, lastX = 0, lastY = 0, moved = 0;
+/* the standard: three.js's own OrbitControls — left orbit, right pan,
+   wheel zoom to cursor, built-in damping. Nothing hand-rolled. */
+let moved = 0, lastX = 0, lastY = 0;
 const dom = renderer.domElement;
 dom.addEventListener("contextmenu", e => e.preventDefault());
-dom.addEventListener("pointerdown", e => {
-  dragging = e.button === 2 || e.button === 1 ? 2 : 1;
-  moved = 0; lastX = e.clientX; lastY = e.clientY;
-  interacted = true; tween = null;
-  ctrl.vt = ctrl.vp = 0;
-});
-addEventListener("pointerup", () => { dragging = 0; });
+const controls = new OrbitControls(camera, dom);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.zoomToCursor = true;
+controls.minDistance = 60;
+controls.maxDistance = 2800;
+controls.autoRotate = !reduced;
+controls.autoRotateSpeed = 0.25;
+camera.position.set(320, 260, 740);
+controls.target.set(0, 0, 0);
+controls.addEventListener("start", () => { controls.autoRotate = false; tween = null; });
+dom.addEventListener("pointerdown", e => { moved = 0; lastX = e.clientX; lastY = e.clientY; });
 addEventListener("pointermove", e => {
   mouse.x = (e.clientX / innerWidth) * 2 - 1;
   mouse.y = -(e.clientY / innerHeight) * 2 + 1;
-  if (!dragging) return;
-  const dx = e.clientX - lastX, dy = e.clientY - lastY;
-  moved += Math.abs(dx) + Math.abs(dy);
-  lastX = e.clientX; lastY = e.clientY;
-  if (dragging === 2) {
-    // pan: slide the target along the camera plane
-    const k = ctrl.dist * 0.0011;
-    camera.getWorldDirection(tmpV);
-    const right = tmpV.clone().cross(camera.up).normalize();
-    const upv = right.clone().cross(tmpV).normalize();
-    ctrl.target.addScaledVector(right, -dx * k).addScaledVector(upv, dy * k);
-  } else {
-    // orbit: 1:1 with the hand, plus a small tail
-    ctrl.theta -= dx * 0.0034;
-    ctrl.phi -= dy * 0.0034;
-    ctrl.vt = -dx * 0.00055;
-    ctrl.vp = -dy * 0.00055;
+  if (e.buttons) {
+    moved += Math.abs(e.clientX - lastX) + Math.abs(e.clientY - lastY);
+    lastX = e.clientX; lastY = e.clientY;
   }
 });
-dom.addEventListener("wheel", e => {
-  e.preventDefault(); interacted = true; tween = null;
-  const f = e.deltaY > 0 ? 1.14 : 0.877;
-  if (f < 1) {
-    // zoom in toward what's under the cursor
-    raycaster.setFromCamera(mouse, camera);
-    tmpV.copy(raycaster.ray.direction).multiplyScalar(ctrl.dist * 0.85).add(raycaster.ray.origin);
-    ctrl.target.lerp(tmpV, 0.24);
-  }
-  ctrl.dist = Math.max(70, Math.min(2800, ctrl.dist * f));
-}, { passive: false });
-function applyCam() {
-  ctrl.theta += ctrl.vt; ctrl.phi += ctrl.vp;
-  ctrl.vt *= 0.8; ctrl.vp *= 0.8;
-  ctrl.phi = Math.max(0.12, Math.min(3.0, ctrl.phi));
-  if (!interacted && !reduced && !tween) ctrl.theta += 0.00045;
-  const sp = Math.sin(ctrl.phi);
-  camera.position.set(
-    ctrl.target.x + ctrl.dist * sp * Math.sin(ctrl.theta),
-    ctrl.target.y + ctrl.dist * Math.cos(ctrl.phi),
-    ctrl.target.z + ctrl.dist * sp * Math.cos(ctrl.theta));
-  camera.lookAt(ctrl.target);
-}
-/* camera flight: tween target + distance, keep current angles */
+/* camera flight */
 let tween = null;
 const easeOutQuart = k => 1 - Math.pow(1 - k, 4);
 function flyTo(vec, dist, ms) {
-  if (reduced) { ctrl.target.copy(vec); ctrl.dist = dist; return; }
-  tween = { t0: performance.now(), ms: ms || 900, fromT: ctrl.target.clone(), toT: vec.clone(), fromD: ctrl.dist, toD: dist };
+  const dir = camera.position.clone().sub(controls.target).normalize();
+  if (reduced) { controls.target.copy(vec); camera.position.copy(vec).addScaledVector(dir, dist); return; }
+  tween = {
+    t0: performance.now(), ms: ms || 900,
+    fT: controls.target.clone(), tT: vec.clone(),
+    fP: camera.position.clone(), tP: vec.clone().addScaledVector(dir, dist),
+  };
 }
 function stepTween(now) {
   if (!tween) return;
   const k = Math.min(1, (now - tween.t0) / tween.ms), e = easeOutQuart(k);
-  ctrl.target.lerpVectors(tween.fromT, tween.toT, e);
-  ctrl.dist = tween.fromD + (tween.toD - tween.fromD) * e;
+  controls.target.lerpVectors(tween.fT, tween.tT, e);
+  camera.position.lerpVectors(tween.fP, tween.tP, e);
   if (k >= 1) tween = null;
 }
 
@@ -365,18 +337,21 @@ function selectThought(n) {
   const p = P(n);
   ring.visible = true; ring.position.copy(p);
   ring.userData.r = radiusOf(n);
-  showDetail(n);
+  pinnedDetail = true; curDetail = n;
+  showDetail(n, true);
   flyTo(p, 90, 800);
 }
 function up() {
   sfx.up();
+  pinnedDetail = false; curDetail = null;
   if (state.thought) { state.thought = null; ring.visible = false; hideDetail(); applyStyles(); crumbs(); flyTo(P(byId.get(state.sess || state.proj || "center") || coreNode), state.sess ? 150 : 430, 700); }
   else if (state.sess) { toProject(state.proj || "center"); }
   else if (state.proj) toUniverse();
 }
 
 /* ---------- detail panel (fixed, calm) ---------- */
-function showDetail(n) {
+let pinnedDetail = false, curDetail = null;
+function showDetail(n, pin) {
   const d = $("detail");
   $("d-role").textContent = n.group;
   $("d-role").style.background = HEX[n.group] || "#94a3b8";
@@ -385,9 +360,38 @@ function showDetail(n) {
   const words = (n.snippet || "").split(/\s+/).filter(w => w.length > 5).slice(0, 3).join(" ");
   $("d-cmd").innerHTML = `terminal: <code>cml search "${words.replace(/"/g, "")}"</code>`;
   d.classList.add("show");
+  d.classList.toggle("pinned", !!pin);
 }
-function hideDetail() { $("detail").classList.remove("show"); }
+function hideDetail() { $("detail").classList.remove("show", "pinned"); }
 $("d-close").addEventListener("click", up);
+
+/* junk queue: 🗑 in the panel hides a memory instantly and queues the real purge */
+let junk = JSON.parse(localStorage.cmlJunk || "[]").filter(id => byId.has("m:" + id));
+localStorage.cmlJunk = JSON.stringify(junk);
+function goneNode(n) { if (n) { n._gone = true; setNodeScale(n, 0.0001); } }
+for (const id of junk) goneNode(byId.get("m:" + id));
+function paintJunk() {
+  $("junkrow").style.display = junk.length ? "flex" : "none";
+  $("junkchip").textContent = `🗑 ${junk.length} marked`;
+}
+paintJunk();
+$("junkcopy").addEventListener("click", () => {
+  if (navigator.clipboard) navigator.clipboard.writeText("cml forget " + junk.join(" "));
+  $("readout").textContent = "purge command copied — run it in a terminal, then regenerate with cml map";
+  sfx.open();
+});
+$("d-forget").addEventListener("click", () => {
+  if (!curDetail) return;
+  const rid = +curDetail.id.slice(2);
+  if (!junk.includes(rid)) junk.push(rid);
+  localStorage.cmlJunk = JSON.stringify(junk);
+  goneNode(curDetail);
+  pinnedDetail = false; curDetail = null;
+  hideDetail();
+  state.thought = null; ring.visible = false;
+  applyStyles(); crumbs(); paintJunk();
+  sfx.up();
+});
 
 /* ---------- raycast hover / click ---------- */
 const raycaster = new Raycaster();
@@ -401,6 +405,7 @@ function raycast() {
     const h = hits[0];
     n = h.object.userData.list[h.instanceId];
   } else if (raycaster.intersectObject(core, false).length) n = coreNode;
+  if (n && n._gone) n = null;
   if (n !== hoverNode) {
     if (hoverNode && hoverNode._g) unhighlightNode(hoverNode);
     if (n && n._g) highlightNode(n);
@@ -411,8 +416,13 @@ function raycast() {
       n.group === "session" ? `▸ session ${n.label} · ${childCount.get(n.id) || 0} thoughts · click to enter`
       : n.group === "project" ? `▸ project ${n.label} · click to enter`
       : n.group === "center" ? "▸ the core · click for overview"
-      : `▸ ${n.group}${n.ts ? " · " + n.ts : ""}${n.project ? " · " + n.project : ""} · click to read`;
+      : `▸ ${n.group}${n.ts ? " · " + n.ts : ""}${n.project ? " · " + n.project : ""} · click to edit`;
+    if (!pinnedDetail) {
+      if (n && n.snippet) showDetail(n, false);
+      else hideDetail();
+    }
   }
+  if (!n && !pinnedDetail) hideDetail();
 }
 dom.addEventListener("click", () => {
   if (moved > 6 || !hoverNode) return;
@@ -449,8 +459,8 @@ let matches = [], mIdx = -1, debounce = null;
 function runSearch() {
   const s = q.value.trim().toLowerCase();
   if (!s) { state.matched = null; matches = []; mIdx = -1; $("mcount").textContent = ""; applyStyles(); return; }
-  matches = DATA.nodes.filter(n =>
-    (n.snippet || "").toLowerCase().includes(s) || (n.label || "").toLowerCase().includes(s));
+  matches = DATA.nodes.filter(n => !n._gone &&
+    ((n.snippet || "").toLowerCase().includes(s) || (n.label || "").toLowerCase().includes(s)));
   state.matched = new Set(matches.map(n => n.id));
   for (const n of matches) { const p = parentOf.get(n.id); if (p) state.matched.add(p); }
   mIdx = -1;
@@ -462,7 +472,7 @@ function cycle(dir) {
   mIdx = (mIdx + dir + matches.length) % matches.length;
   const n = matches[mIdx];
   $("mcount").textContent = `${mIdx + 1}/${matches.length}`;
-  sfx.found(); interacted = true;
+  sfx.found(); controls.autoRotate = false;
   if (n.snippet) selectThought(n); else if (n.group === "session") toSession(n.id); else if (n.group === "project") toProject(n.id);
 }
 q.addEventListener("input", () => { clearTimeout(debounce); debounce = setTimeout(runSearch, 240); });
@@ -564,7 +574,7 @@ const A = byId, B = P; // keep minifier-free references stable
 (function loop(now) {
   requestAnimationFrame(loop);
   stepTween(now || performance.now());
-  applyCam();
+  controls.update();
   if (pulses && pulses.visible) {
     const st = pulses.userData.st, attr = pulses.geometry.attributes.position;
     for (let i = 0; i < st.length; i++) {

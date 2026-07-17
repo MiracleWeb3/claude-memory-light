@@ -114,6 +114,13 @@
     background: #0a0507; border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; max-width: 75ch; }
   #d-cmd { color: var(--ink2); font-size: 11px; }
   #d-cmd code { color: var(--ok); }
+  #d-actions { display: none; }
+  #detail.pinned #d-actions { display: block; }
+  #detail:not(.pinned) #d-close { display: none; }
+  #d-actions .btn { display: inline-block; padding: 6px 12px; }
+  .btn.danger:hover { color: #f87171; border-color: #f87171; box-shadow: none; }
+  #junkrow { display: none; gap: 8px; margin-top: 8px; align-items: center; }
+  #junkchip { color: #f87171; font-size: 11px; white-space: nowrap; }
 
   #loading {
     position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
@@ -173,7 +180,8 @@
     <span class="btn" id="b-view" tabindex="0">⛶ overview</span>
     <span class="btn" id="b-sound" tabindex="0">🔊 sound</span>
   </div>
-  <div id="hint"><kbd>drag</kbd> orbit · <kbd>right-drag</kbd> pan · <kbd>wheel</kbd> zoom to cursor · <kbd>click</kbd> enter / read · <kbd>Esc</kbd> back · <kbd>/</kbd> search</div>
+  <div id="junkrow"><span id="junkchip"></span><span class="btn" id="junkcopy" tabindex="0">copy purge cmd</span></div>
+  <div id="hint"><kbd>drag</kbd> orbit · <kbd>right-drag</kbd> pan · <kbd>wheel</kbd> zoom to cursor · <kbd>hover</kbd> read · <kbd>click</kbd> edit · <kbd>Esc</kbd> back · <kbd>/</kbd> search</div>
 </div>
 
 <div id="detail" class="panel">
@@ -182,6 +190,7 @@
   <div id="d-meta"></div>
   <div id="d-txt"></div>
   <div id="d-cmd"></div>
+  <div id="d-actions"><span class="btn danger" id="d-forget" tabindex="0">🗑 forget this memory</span></div>
 </div>
 
 <script>
@@ -196,6 +205,7 @@ window.CML_GRAPH = /*%%PAYLOAD%%*/ null;
 </script>
 <script type="module">
 /*%%THREE%%*/
+/*%%CONTROLS%%*/
 /*%%APP%%*/
 </script>
 </body>
