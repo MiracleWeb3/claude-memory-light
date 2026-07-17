@@ -3,66 +3,123 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>cml — memory map</title>
+<title>cml — memory core</title>
 <style>
   :root {
-    --bg: #05060a; --panel: rgba(13,17,23,.82); --border: #1f2733;
-    --text: #e6edf3; --dim: #8b949e; --accent: #f97316;
+    --bg: #05060a; --panel: rgba(10,14,20,.78); --border: #1f2733;
+    --text: #e6edf3; --dim: #8b949e; --accent: #f97316; --accent2: #22d3ee;
     --user: #fb923c; --assistant: #60a5fa; --summary: #94a3b8;
-    --memory: #34d399; --wiki: #c084fc; --project: #f59e0b; --session: #64748b;
+    --memory: #34d399; --wiki: #c084fc;
   }
   * { margin: 0; box-sizing: border-box; }
-  body { background: var(--bg); color: var(--text); font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow: hidden; }
+  body { background: var(--bg); color: var(--text); font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow: hidden; }
+  #stars { position: fixed; inset: 0; pointer-events: none; }
   #graph { position: fixed; inset: 0; }
   .panel {
     position: fixed; z-index: 10; background: var(--panel); border: 1px solid var(--border);
-    border-radius: 12px; padding: 14px 16px; backdrop-filter: blur(10px);
+    border-radius: 12px; padding: 14px 16px; backdrop-filter: blur(12px);
   }
-  #hud { top: 16px; left: 16px; width: 300px; }
+  .panel::before, .panel::after {
+    content: ""; position: absolute; width: 16px; height: 16px;
+    border: 2px solid var(--accent); opacity: .6; pointer-events: none;
+  }
+  .panel::before { top: -2px; left: -2px; border-right: none; border-bottom: none; border-radius: 12px 0 0 0; }
+  .panel::after  { bottom: -2px; right: -2px; border-left: none; border-top: none; border-radius: 0 0 12px 0; }
+  #hud { top: 16px; left: 16px; width: 312px; overflow: hidden; animation: slidein .6s cubic-bezier(.2,.9,.25,1) both .2s; }
+  #hud .scan {
+    position: absolute; left: 0; right: 0; height: 70px; top: -70px; pointer-events: none;
+    background: linear-gradient(180deg, transparent, rgba(249,115,22,.05), transparent);
+    animation: scan 7s linear infinite 2s;
+  }
   #hud h1 { font-size: 19px; letter-spacing: .5px; }
   #hud h1 b { color: var(--accent); }
-  #stats { color: var(--dim); font-size: 12px; margin: 6px 0 10px; }
+  #status { display: flex; align-items: center; gap: 7px; color: var(--dim); font-size: 11px; margin-top: 4px; letter-spacing: .8px; }
+  #status .led { width: 7px; height: 7px; border-radius: 50%; background: var(--memory); animation: pulse 2.2s ease-in-out infinite; }
+  #stats { color: var(--dim); font-size: 12px; margin: 8px 0 10px; }
+  #stats b { color: var(--text); font-weight: 600; }
+  #readout { color: var(--accent2); font-size: 11px; min-height: 15px; margin: 0 0 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   #q {
-    width: 100%; background: #0b0f14; border: 1px solid var(--border); border-radius: 8px;
-    color: var(--text); padding: 8px 10px; font: inherit; outline: none;
+    width: 100%; background: rgba(5,8,12,.9); border: 1px solid var(--border); border-radius: 8px;
+    color: var(--text); padding: 8px 10px; font: inherit; outline: none; transition: border-color .25s, box-shadow .25s;
   }
-  #q:focus { border-color: var(--accent); }
+  #q:focus { border-color: var(--accent); box-shadow: 0 0 14px rgba(249,115,22,.25); }
   #chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
   .chip {
-    border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px; font-size: 12px;
-    cursor: pointer; user-select: none; color: var(--dim); transition: all .15s;
+    border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px; font-size: 11px;
+    cursor: pointer; user-select: none; color: var(--dim); transition: all .22s cubic-bezier(.2,.9,.25,1);
   }
+  .chip:hover { transform: translateY(-1px); border-color: var(--dim); }
   .chip.on { color: #05060a; font-weight: 600; }
-  .chip[data-g="user"].on { background: var(--user); }
-  .chip[data-g="assistant"].on { background: var(--assistant); }
+  .chip[data-g="user"].on { background: var(--user); box-shadow: 0 0 10px rgba(251,146,60,.35); }
+  .chip[data-g="assistant"].on { background: var(--assistant); box-shadow: 0 0 10px rgba(96,165,250,.35); }
   .chip[data-g="summary"].on { background: var(--summary); }
-  .chip[data-g="memory"].on { background: var(--memory); }
-  .chip[data-g="wiki"].on { background: var(--wiki); }
-  .chip[data-g="code"].on { background: #22d3ee; }
-  #hint { color: var(--dim); font-size: 11px; margin-top: 10px; }
-  #detail { right: 16px; top: 16px; width: 360px; display: none; max-height: calc(100vh - 32px); overflow: auto; }
+  .chip[data-g="memory"].on { background: var(--memory); box-shadow: 0 0 10px rgba(52,211,153,.35); }
+  .chip[data-g="wiki"].on { background: var(--wiki); box-shadow: 0 0 10px rgba(192,132,252,.35); }
+  .chip[data-g="code"].on { background: var(--accent2); box-shadow: 0 0 10px rgba(34,211,238,.35); }
+  #btns { display: flex; gap: 6px; margin-top: 10px; }
+  .btn {
+    flex: 1; text-align: center; border: 1px solid var(--border); border-radius: 8px; padding: 5px 0;
+    cursor: pointer; color: var(--dim); font-size: 12px; transition: all .22s;
+  }
+  .btn:hover { color: var(--text); border-color: var(--accent); box-shadow: 0 0 10px rgba(249,115,22,.2); }
+  #hint { color: #56606c; font-size: 10.5px; margin-top: 10px; letter-spacing: .3px; }
+  kbd { border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; font-size: 10px; color: var(--dim); }
+  #detail {
+    right: 16px; top: 16px; width: 368px; max-height: calc(100vh - 32px); overflow: auto;
+    opacity: 0; transform: translateX(24px); visibility: hidden; transition: all .35s cubic-bezier(.2,.9,.25,1);
+  }
+  #detail.show { opacity: 1; transform: none; visibility: visible; }
   #detail .role { display: inline-block; border-radius: 6px; padding: 2px 8px; font-size: 11px; font-weight: 700; color: #05060a; }
   #detail .meta { color: var(--dim); font-size: 12px; margin: 8px 0; }
-  #detail .snippet { white-space: pre-wrap; word-break: break-word; font-size: 13px; background: #0b0f14; border-radius: 8px; padding: 10px 12px; }
+  #detail .snippet { white-space: pre-wrap; word-break: break-word; font-size: 13px; background: rgba(5,8,12,.85); border-radius: 8px; padding: 10px 12px; }
   #detail .cmd { margin-top: 12px; color: var(--dim); font-size: 11px; }
   #detail .cmd code { color: var(--memory); }
-  #close { float: right; cursor: pointer; color: var(--dim); }
+  #close { float: right; cursor: pointer; color: var(--dim); transition: color .2s, transform .2s; }
+  #close:hover { color: var(--text); transform: rotate(90deg); }
   #loading {
     position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
-    background: var(--bg); z-index: 100; flex-direction: column; gap: 12px;
+    background: var(--bg); z-index: 100; flex-direction: column; gap: 26px;
+    transition: opacity .8s ease, visibility .8s;
   }
-  .pulse { width: 14px; height: 14px; border-radius: 50%; background: var(--accent); animation: p 1s infinite alternate; }
-  @keyframes p { from { transform: scale(1); opacity: .5 } to { transform: scale(1.8); opacity: 1 } }
+  #loading.off { opacity: 0; visibility: hidden; }
+  .ring { width: 74px; height: 74px; border-radius: 50%; position: relative;
+    background: conic-gradient(from 0deg, transparent 60%, var(--accent) 92%, transparent 100%);
+    -webkit-mask: radial-gradient(farthest-side, transparent 62%, #000 64%);
+            mask: radial-gradient(farthest-side, transparent 62%, #000 64%);
+    animation: spin 1.15s linear infinite;
+  }
+  .ring2 { position: absolute; inset: 12px; border-radius: 50%;
+    background: conic-gradient(from 180deg, transparent 70%, var(--accent2) 96%, transparent 100%);
+    -webkit-mask: radial-gradient(farthest-side, transparent 58%, #000 60%);
+            mask: radial-gradient(farthest-side, transparent 58%, #000 60%);
+    animation: spin 1.7s linear infinite reverse;
+  }
+  #bootlog { color: var(--dim); font-size: 12.5px; line-height: 1.9; min-height: 130px; min-width: 340px; }
+  #bootlog .ok { color: var(--memory); }
+  #bootlog .val { color: var(--text); }
+  #bootlog .cursor { display: inline-block; width: 7px; height: 13px; background: var(--accent); animation: pulse 1s steps(2) infinite; vertical-align: -2px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes pulse { 50% { opacity: .25; } }
+  @keyframes scan { to { top: 110%; } }
+  @keyframes slidein { from { opacity: 0; transform: translateX(-22px); } }
+  @keyframes drift { to { transform: translateY(-70px); } }
 </style>
 </head>
 <body>
-<div id="loading"><div class="pulse"></div><div style="color:var(--dim)">building your memory…</div></div>
+<div id="stars"></div>
+<div id="loading">
+  <div class="ring"><div class="ring2"></div></div>
+  <pre id="bootlog"></pre>
+</div>
 <div id="graph"></div>
 
 <div id="hud" class="panel">
-  <h1>🧠 <b>cml</b> memory map</h1>
+  <div class="scan"></div>
+  <h1>🧠 <b>cml</b> memory core</h1>
+  <div id="status"><span class="led"></span><span>MEMORY CORE ONLINE</span></div>
   <div id="stats"></div>
-  <input id="q" placeholder="search… (Enter to fly, Esc to clear)"/>
+  <div id="readout"></div>
+  <input id="q" placeholder="query memory…  ( / to focus )"/>
   <div id="chips">
     <span class="chip on" data-g="user">user</span>
     <span class="chip on" data-g="assistant">assistant</span>
@@ -71,7 +128,11 @@
     <span class="chip on" data-g="wiki">wiki</span>
     <span class="chip on" data-g="code">code</span>
   </div>
-  <div id="hint">drag to orbit · scroll to zoom · click a node for details</div>
+  <div id="btns">
+    <span class="btn" id="b-view" title="overview">⛶ overview</span>
+    <span class="btn" id="b-sound" title="sound">🔊 sound</span>
+  </div>
+  <div id="hint"><kbd>/</kbd> search · <kbd>Enter</kbd> fly · <kbd>Esc</kbd> clear · click = focus a thought</div>
 </div>
 
 <div id="detail" class="panel">
@@ -88,8 +149,8 @@
 "use strict";
 window.addEventListener("error", e => {
   const l = document.getElementById("loading");
-  if (l && l.style.display !== "none")
-    l.innerHTML = '<div style="color:#f87171">map failed to start: ' + (e.message || "unknown error") + "</div>";
+  if (l && !l.classList.contains("off"))
+    l.innerHTML = '<div style="color:#f87171">core failed to start: ' + (e.message || "unknown error") + "</div>";
 });
 const DATA = window.CML_GRAPH;
 const COLORS = {
@@ -97,80 +158,195 @@ const COLORS = {
   user: "#fb923c", assistant: "#60a5fa", summary: "#94a3b8",
   memory: "#34d399", wiki: "#c084fc", code: "#22d3ee", coderoot: "#0ea5e9"
 };
-const off = new Set();
-let matched = null;
 
-const Graph = ForceGraph3D()(document.getElementById("graph"))
-  .backgroundColor("#05060a")
+/* ---------- sound: synthesized, no files ---------- */
+const AC = window.AudioContext ? new AudioContext() : null;
+let soundOn = localStorage.cmlSound !== "off";
+document.addEventListener("pointerdown", () => { if (AC && AC.state === "suspended") AC.resume(); }, { once: true });
+function tone(freq, dur, type, vol, when, sweep) {
+  if (!soundOn || !AC || AC.state === "suspended") return;
+  const t = AC.currentTime + (when || 0);
+  const o = AC.createOscillator(), g = AC.createGain();
+  o.type = type || "sine"; o.frequency.setValueAtTime(freq, t);
+  if (sweep) o.frequency.exponentialRampToValueAtTime(sweep, t + dur);
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.linearRampToValueAtTime(vol || 0.04, t + 0.012);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g); g.connect(AC.destination);
+  o.start(t); o.stop(t + dur + 0.05);
+}
+const sfx = {
+  boot:   () => { tone(180, .5, "sine", .05, 0, 740); tone(440, .45, "sine", .028, .18, 1680); },
+  hover:  () => tone(1500, .028, "sine", .012),
+  click:  () => { tone(880, .06, "triangle", .045); tone(1320, .09, "triangle", .032, .05); },
+  found:  () => { tone(660, .08, "sine", .05); tone(990, .09, "sine", .045, .08); tone(1480, .12, "sine", .035, .16); },
+  none:   () => tone(200, .22, "sawtooth", .022, 0, 110),
+  toggle: () => tone(540, .05, "square", .02),
+  syn:    () => tone(1900 + Math.random() * 1100, .05, "sine", .006),
+};
+
+/* ---------- parallax starfield behind a transparent renderer ---------- */
+(function stars() {
+  let a = "", b = "";
+  for (let i = 0; i < 120; i++) a += `${(Math.random() * 100).toFixed(1)}vw ${(Math.random() * 110).toFixed(1)}vh 0 rgba(230,237,243,${(.12 + Math.random() * .35).toFixed(2)}),`;
+  for (let i = 0; i < 45; i++) b += `${(Math.random() * 100).toFixed(1)}vw ${(Math.random() * 110).toFixed(1)}vh 1px rgba(249,${160 + (Math.random() * 70 | 0)},60,${(.08 + Math.random() * .2).toFixed(2)}),`;
+  const st = document.createElement("style");
+  st.textContent =
+    `#stars::before{content:"";position:absolute;top:0;left:0;width:2px;height:2px;border-radius:50%;box-shadow:${a.slice(0, -1)};animation:drift 260s linear infinite}` +
+    `#stars::after{content:"";position:absolute;top:0;left:0;width:2px;height:2px;border-radius:50%;box-shadow:${b.slice(0, -1)};animation:drift 380s linear infinite reverse}`;
+  document.head.appendChild(st);
+})();
+
+/* ---------- graph ---------- */
+const off = new Set();
+let matched = null;   // search result set
+let focusSet = null;  // clicked-neighborhood set
+let adj = null;
+
+const Graph = ForceGraph3D({ rendererConfig: { alpha: true, antialias: false, powerPreference: "high-performance" } })(document.getElementById("graph"))
+  .backgroundColor("rgba(0,0,0,0)")
   .graphData(DATA)
-  .nodeLabel(n => n.group === "center" ? "memory"
+  .nodeLabel(n => n.group === "center" ? "memory core"
     : n.group === "project" ? `project: ${n.label}`
     : n.group === "session" ? `session ${n.label}`
+    : n.group === "coderoot" ? "code graph"
     : `[${n.group}] ${n.ts || ""}\n${(n.snippet || "").slice(0, 120)}`)
   .nodeVal(n => n.val)
   .nodeColor(n => {
     const base = COLORS[n.group] || "#8b949e";
-    if (matched) return matched.has(n.id) ? "#ffffff" : base + "26";
+    if (matched) return matched.has(n.id) ? "#ffffff" : base + "22";
+    if (focusSet) return focusSet.has(n.id) ? base : base + "1a";
     return base;
   })
-  .nodeOpacity(0.92)
-  .nodeResolution(10)
+  .nodeOpacity(0.94)
+  .nodeResolution(6)
   .nodeVisibility(n => !(off.has(n.group)))
   .linkVisibility(l => {
     const s = typeof l.source === "object" ? l.source : { group: "" };
     const t = typeof l.target === "object" ? l.target : { group: "" };
     return !(off.has(s.group) || off.has(t.group));
   })
-  .linkColor(l => l.kind === "spine" ? "#f9731655"
-    : l.kind === "wikilink" ? "#34d39988"
-    : l.kind === "code" ? "#22d3ee55"
-    : l.kind === "tether" ? "#0ea5e914" : "#1e293b")
+  .linkColor(l => {
+    if (focusSet) {
+      const s = typeof l.source === "object" ? l.source.id : l.source;
+      const t = typeof l.target === "object" ? l.target.id : l.target;
+      return (focusSet.has(s) && focusSet.has(t)) ? "#ffffffcc" : "#1e293b22";
+    }
+    return l.kind === "spine" ? "#f9731655"
+      : l.kind === "wikilink" ? "#34d39988"
+      : l.kind === "code" ? "#22d3ee55"
+      : l.kind === "tether" ? "#0ea5e914" : "#1e293b";
+  })
   .linkOpacity(0.35)
   .linkWidth(l => l.kind === "spine" ? 1.2 : l.kind === "wikilink" ? 1.0 : l.kind === "code" ? 0.6 : 0.3)
   .linkDirectionalParticles(l => l.kind === "spine" ? 2 : l.kind === "wikilink" ? 1 : 0)
   .linkDirectionalParticleSpeed(0.004)
   .linkDirectionalParticleWidth(1.6)
-  .warmupTicks(80)
-  .cooldownTicks(220)
-  .onNodeClick(node => {
-    const d = document.getElementById("detail");
-    if (node.group === "center" || node.group === "project" || node.group === "session") {
-      flyTo(node); return;
-    }
-    d.style.display = "block";
-    const r = document.getElementById("d-role");
-    r.textContent = node.group;
-    r.style.background = COLORS[node.group] || "#8b949e";
-    document.getElementById("d-meta").textContent =
-      `${node.ts || "no date"} · ${node.project || ""} · session ${node.session || ""}`;
-    document.getElementById("d-snip").textContent = node.snippet || "";
-    const words = (node.snippet || "").split(/\s+/).filter(w => w.length > 5).slice(0, 3).join(" ");
-    document.getElementById("d-cmd").innerHTML =
-      `open in terminal: <code>cml search "${words.replace(/"/g, "")}"</code>`;
-    flyTo(node);
-  });
+  .warmupTicks(90)
+  .cooldownTicks(160)
+  .onNodeHover(handleHover)
+  .onNodeClick(handleClick)
+  .onBackgroundClick(clearFocus);
 
-document.getElementById("loading").style.display = "none";
+try { Graph.renderer().setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5)); } catch (e) {}
+window.addEventListener("resize", () => Graph.width(innerWidth).height(innerHeight));
+document.addEventListener("visibilitychange", () =>
+  document.hidden ? Graph.pauseAnimation() : Graph.resumeAnimation());
+
+function restyle() {
+  Graph.nodeColor(Graph.nodeColor());
+  Graph.linkColor(Graph.linkColor());
+}
+function buildAdj() {
+  if (adj) return;
+  adj = new Map();
+  for (const l of DATA.links) {
+    const s = typeof l.source === "object" ? l.source.id : l.source;
+    const t = typeof l.target === "object" ? l.target.id : l.target;
+    if (!adj.has(s)) adj.set(s, new Set());
+    if (!adj.has(t)) adj.set(t, new Set());
+    adj.get(s).add(t); adj.get(t).add(s);
+  }
+}
+
+/* hover: readout line + soft tick, throttled */
+let lastHover = null, lastTick = 0;
+const readout = document.getElementById("readout");
+function handleHover(node) {
+  document.body.style.cursor = node ? "pointer" : "default";
+  if (node && node !== lastHover) {
+    const now = performance.now();
+    if (now - lastTick > 90) { sfx.hover(); lastTick = now; }
+    readout.textContent = node.group === "center" ? "▸ the core"
+      : node.group === "project" ? `▸ project · ${node.label}`
+      : node.group === "session" ? `▸ session ${node.label}`
+      : `▸ ${node.group} · ${node.ts || "?"} · ${node.project || ""}`;
+  }
+  if (!node) readout.textContent = "";
+  lastHover = node;
+}
 
 function flyTo(node) {
   const dist = 130;
   const ratio = 1 + dist / Math.hypot(node.x || 1, node.y || 1, node.z || 1);
-  Graph.cameraPosition(
-    { x: node.x * ratio, y: node.y * ratio, z: node.z * ratio }, node, 1200);
+  Graph.cameraPosition({ x: node.x * ratio, y: node.y * ratio, z: node.z * ratio }, node, 1300);
 }
 
-// auto-orbit until the user grabs it
+function handleClick(node) {
+  sfx.click();
+  orbiting = false;
+  buildAdj();
+  focusSet = new Set([node.id, ...(adj.get(node.id) || [])]);
+  restyle();
+  const d = document.getElementById("detail");
+  if (node.group === "center" || node.group === "project" || node.group === "session" || node.group === "coderoot") {
+    d.classList.remove("show"); flyTo(node); return;
+  }
+  d.classList.add("show");
+  const r = document.getElementById("d-role");
+  r.textContent = node.group;
+  r.style.background = COLORS[node.group] || "#8b949e";
+  document.getElementById("d-meta").textContent =
+    `${node.ts || "no date"} · ${node.project || ""} · session ${node.session || ""}`;
+  document.getElementById("d-snip").textContent = node.snippet || "";
+  const words = (node.snippet || "").split(/\s+/).filter(w => w.length > 5).slice(0, 3).join(" ");
+  document.getElementById("d-cmd").innerHTML =
+    `open in terminal: <code>cml search "${words.replace(/"/g, "")}"</code>`;
+  flyTo(node);
+}
+function clearFocus() {
+  if (!focusSet && !matched) return;
+  focusSet = null;
+  document.getElementById("detail").classList.remove("show");
+  restyle();
+}
+
+/* auto-orbit with a gentle bob until the user takes the stick */
 let angle = 0, orbiting = true;
 const orbit = setInterval(() => {
   if (!orbiting) return clearInterval(orbit);
-  angle += Math.PI / 900;
-  Graph.cameraPosition({ x: 720 * Math.sin(angle), z: 720 * Math.cos(angle) });
+  angle += Math.PI / 1100;
+  Graph.cameraPosition({ x: 760 * Math.sin(angle), y: 60 * Math.sin(angle * 2.3), z: 760 * Math.cos(angle) });
 }, 30);
 ["pointerdown", "wheel"].forEach(ev =>
   document.getElementById("graph").addEventListener(ev, () => { orbiting = false; }, { once: true }));
 
-// role filter chips
+/* synaptic idle firing: random pulses travel the network */
+const leafLinks = DATA.links.filter(l => l.kind !== "tether");
+if (typeof Graph.emitParticle === "function" && leafLinks.length) {
+  setInterval(() => {
+    if (document.hidden) return;
+    for (let i = 0; i < 2; i++) {
+      const l = leafLinks[(Math.random() * leafLinks.length) | 0];
+      Graph.emitParticle(l);
+    }
+    if (Math.random() < 0.12) sfx.syn();
+  }, 420);
+}
+
+/* chips */
 document.querySelectorAll(".chip").forEach(ch => ch.addEventListener("click", () => {
+  sfx.toggle();
   const g = ch.dataset.g;
   ch.classList.toggle("on");
   ch.classList.contains("on") ? off.delete(g) : off.add(g);
@@ -178,30 +354,86 @@ document.querySelectorAll(".chip").forEach(ch => ch.addEventListener("click", ()
   Graph.linkVisibility(Graph.linkVisibility());
 }));
 
-// search
+/* buttons */
+document.getElementById("b-view").addEventListener("click", () => {
+  sfx.click();
+  clearFocus(); matched = null; restyle();
+  Graph.cameraPosition({ x: 0, y: 80, z: 900 }, { x: 0, y: 0, z: 0 }, 1400);
+});
+const bSound = document.getElementById("b-sound");
+function paintSound() { bSound.textContent = soundOn ? "🔊 sound" : "🔇 muted"; }
+paintSound();
+bSound.addEventListener("click", () => {
+  soundOn = !soundOn;
+  localStorage.cmlSound = soundOn ? "on" : "off";
+  paintSound(); if (soundOn) sfx.toggle();
+});
+
+/* search */
 const q = document.getElementById("q");
 q.addEventListener("keydown", e => {
-  if (e.key === "Escape") { q.value = ""; matched = null; Graph.nodeColor(Graph.nodeColor()); return; }
+  e.stopPropagation();
+  if (e.key === "Escape") { q.value = ""; q.blur(); matched = null; restyle(); paintStats(); return; }
   if (e.key !== "Enter") return;
   const s = q.value.trim().toLowerCase();
-  if (!s) { matched = null; Graph.nodeColor(Graph.nodeColor()); return; }
+  if (!s) { matched = null; restyle(); paintStats(); return; }
   matched = new Set(DATA.nodes
     .filter(n => (n.snippet || "").toLowerCase().includes(s) || (n.label || "").toLowerCase().includes(s))
     .map(n => n.id));
-  Graph.nodeColor(Graph.nodeColor());
+  restyle();
   const first = DATA.nodes.find(n => matched.has(n.id) && n.group !== "project" && n.group !== "session");
-  if (first) flyTo(first);
-  document.getElementById("stats").textContent = statsLine() + ` · ${matched.size} match`;
+  if (first) { sfx.found(); orbiting = false; flyTo(first); } else { sfx.none(); }
+  paintStats(matched.size);
 });
+document.addEventListener("keydown", e => {
+  if (e.key === "/" && document.activeElement !== q) { e.preventDefault(); q.focus(); }
+  if (e.key === "Escape") { matched = null; clearFocus(); restyle(); paintStats(); }
+});
+document.getElementById("close").addEventListener("click", clearFocus);
 
-document.getElementById("close").addEventListener("click",
-  () => document.getElementById("detail").style.display = "none");
-
-function statsLine() {
+/* stats with count-up */
+function paintStats(extra) {
   const s = DATA.stats;
-  return `${s.rows} rows · ${s.sessions} sessions · ${s.projects} projects · ${s.db_mb} MB`;
+  document.getElementById("stats").innerHTML =
+    `<b>${s.rows.toLocaleString()}</b> memories · <b>${s.sessions}</b> sessions · <b>${s.projects}</b> projects · ${s.db_mb} MB` +
+    (extra != null ? ` · <b style="color:var(--accent2)">${extra} match</b>` : "");
 }
-document.getElementById("stats").textContent = statsLine();
+(function countUp() {
+  const target = DATA.stats.rows, t0 = performance.now(), dur = 900;
+  (function tick(now) {
+    const k = Math.min(1, (now - t0) / dur), eased = 1 - Math.pow(1 - k, 3);
+    document.getElementById("stats").innerHTML =
+      `<b>${Math.round(target * eased).toLocaleString()}</b> memories · <b>${DATA.stats.sessions}</b> sessions · <b>${DATA.stats.projects}</b> projects · ${DATA.stats.db_mb} MB`;
+    if (k < 1) requestAnimationFrame(tick); else paintStats();
+  })(t0);
+})();
+
+/* boot sequence */
+(function boot() {
+  const log = document.getElementById("bootlog");
+  const lines = [
+    ["MEMORY CORE", `${DATA.stats.rows.toLocaleString()} nodes`],
+    ["SYNAPSES", `${DATA.links.length.toLocaleString()} links`],
+    ["SESSIONS", `${DATA.stats.sessions} indexed`],
+    ["RENDER ENGINE", "vendored · offline"],
+    ["SYSTEM", "ONLINE"],
+  ];
+  let i = 0;
+  function next() {
+    if (i < lines.length) {
+      const [k, v] = lines[i++];
+      const pad = ".".repeat(Math.max(2, 18 - k.length));
+      log.innerHTML += `<span class="ok">▸</span> ${k} <span style="color:#30363d">${pad}</span> <span class="${i === lines.length ? "ok" : "val"}">${v}</span>\n`;
+      tone(700 + i * 140, .04, "square", .015);
+      setTimeout(next, 170 + Math.random() * 120);
+    } else {
+      log.innerHTML += '<span class="cursor"></span>';
+      sfx.boot();
+      setTimeout(() => document.getElementById("loading").classList.add("off"), 480);
+    }
+  }
+  setTimeout(next, 320);
+})();
 </script>
 </body>
 </html>

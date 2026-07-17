@@ -1,7 +1,7 @@
 {
   "tool_name": "Bash",
-  "tool_input_preview": "{\"command\":\"cargo build --release 2>&1 | grep -E \\\"^error|Finished\\\" | head -3 && cp target/release/cml ~/.local/bin/cml && ls -lh ~/.local/bin/cml | awk '{print $5}' && echo \\\"=== keyword-only baseli...",
-  "error": "Exit code 1\nerror[E0597]: `stmt` does not live long enough\nerror[E0597]: `stmt` does not live long enough\nerror: could not compile `claude-memory-light` (bin \"cml\") due to 2 previous errors\n3,8M\n=== keyword-only baseline: phrase absent from corpus ===\nno hits for: \"laptop pointing device misbehaving\" \"--keyword\"\n=== embed: download model + backfill all rows ===\ncml: usage: cml index [--all] | search <terms> [--project P] [--role R] [--limit N] | map [--limit N] [--no-open] | stats | doctor | cap...",
-  "timestamp": "2026-07-17T16:30:38.246Z",
+  "tool_input_preview": "{\"command\":\"set -o pipefail; cargo build --release 2>&1 | tail -2 && cp target/release/cml ~/.local/bin/cml && ~/.local/bin/cml search \\\"streaming movies broken\\\" --limit 2 && git add -A && git commit...",
+  "error": "Exit code 141\n   Compiling claude-memory-light v1.3.0 (/home/definitive/dev/claude-memory-light)\n    Finished `release` profile [optimized] target(s) in 9.90s\n2026-07-04 user      dev-business-black-telegram-bots-parserx 003546a0 | the system is broken completely\n2026-07-12 assistant home           b7e5c8c7 | Three translators available. Testing which CDN each one streams from.\n8c156ed  semantic search: sqlite-vec + local model2vec embeddings, hybrid rrf. 4k rows in 1.4s, still 0 tokens\nbbc40d4 ...",
+  "timestamp": "2026-07-17T16:33:05.350Z",
   "retry_count": 1
 }
