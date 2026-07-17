@@ -6,7 +6,7 @@
 <title>cml — memory core</title>
 <style>
   :root {
-    --bg: #060407; --panel: rgba(16,8,10,.8); --border: #3a1418;
+    --bg: #060407; --panel: rgba(14,7,9,.94); --border: #3a1418;
     --text: #f5e9e9; --dim: #a08b8b; --accent: #ef4444; --accent2: #22d3ee;
     --user: #fb923c; --assistant: #60a5fa; --summary: #94a3b8;
     --memory: #34d399; --wiki: #c084fc;
@@ -18,7 +18,7 @@
   #graph { position: fixed; inset: 0; }
   .panel {
     position: fixed; z-index: 10; background: var(--panel); border: 1px solid var(--border);
-    border-radius: 10px; padding: 14px 16px; backdrop-filter: blur(12px);
+    border-radius: 10px; padding: 14px 16px;
   }
   .panel::before, .panel::after {
     content: ""; position: absolute; width: 16px; height: 16px;
@@ -36,6 +36,7 @@
   #hud h1 b { color: var(--accent); text-shadow: 0 0 12px rgba(239,68,68,.5); }
   #status { display: flex; align-items: center; gap: 7px; color: var(--dim); font-size: 11px; margin-top: 4px; letter-spacing: .8px; }
   #status .led { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 8px var(--accent); animation: pulse 1.8s ease-in-out infinite; }
+  #fps { margin-left: auto; color: #6b5a5a; }
   #stats { color: var(--dim); font-size: 12px; margin: 8px 0 8px; }
   #stats b { color: var(--text); font-weight: 600; }
   #readout { color: #f87171; font-size: 11px; min-height: 15px; margin: 0 0 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -59,12 +60,12 @@
   }
   .chip:hover { transform: translateY(-1px); border-color: var(--dim); }
   .chip.on { color: #060407; font-weight: 600; }
-  .chip[data-g="user"].on { background: var(--user); box-shadow: 0 0 10px rgba(251,146,60,.4); }
-  .chip[data-g="assistant"].on { background: var(--assistant); box-shadow: 0 0 10px rgba(96,165,250,.4); }
+  .chip[data-g="user"].on { background: var(--user); }
+  .chip[data-g="assistant"].on { background: var(--assistant); }
   .chip[data-g="summary"].on { background: var(--summary); }
-  .chip[data-g="memory"].on { background: var(--memory); box-shadow: 0 0 10px rgba(52,211,153,.4); }
-  .chip[data-g="wiki"].on { background: var(--wiki); box-shadow: 0 0 10px rgba(192,132,252,.4); }
-  .chip[data-g="code"].on { background: var(--accent2); box-shadow: 0 0 10px rgba(34,211,238,.4); }
+  .chip[data-g="memory"].on { background: var(--memory); }
+  .chip[data-g="wiki"].on { background: var(--wiki); }
+  .chip[data-g="code"].on { background: var(--accent2); }
   #btns { display: flex; gap: 6px; margin-top: 10px; }
   .btn {
     flex: 1; text-align: center; border: 1px solid var(--border); border-radius: 8px; padding: 5px 0;
@@ -74,25 +75,23 @@
   #hint { color: #63504f; font-size: 10.5px; margin-top: 10px; letter-spacing: .3px; }
   kbd { border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; font-size: 10px; color: var(--dim); }
 
-  /* project labels pinned to 3D space */
   .plabel {
     position: fixed; left: 0; top: 0; z-index: 6; pointer-events: auto; cursor: pointer;
     font-size: 11px; letter-spacing: .6px; color: #fbbf24; text-shadow: 0 0 8px rgba(0,0,0,.9);
     padding: 1px 7px; border: 1px solid rgba(245,158,11,.35); border-radius: 999px;
-    background: rgba(10,6,4,.55); backdrop-filter: blur(3px); transition: border-color .2s, color .2s;
+    background: rgba(10,6,4,.8); transition: border-color .2s, color .2s;
     will-change: transform;
   }
   .plabel:hover { color: #fde68a; border-color: #f59e0b; }
   .plabel.core { color: #f87171; border-color: rgba(239,68,68,.45); }
   .plabel.codeL { color: #67e8f9; border-color: rgba(34,211,238,.4); }
 
-  /* the node card: a circle that becomes a block of text */
   #cardpos { position: fixed; left: 0; top: 0; z-index: 20; pointer-events: none; will-change: transform; }
   #card {
     transform: translate(-50%, calc(-100% - 16px)) scale(.15); transform-origin: 50% calc(100% + 16px);
     opacity: 0; width: 280px; pointer-events: none;
-    background: rgba(14,7,9,.9); border: 1px solid var(--border); border-radius: 10px;
-    padding: 10px 12px; backdrop-filter: blur(10px);
+    background: rgba(14,7,9,.96); border: 1px solid var(--border); border-radius: 10px;
+    padding: 10px 12px;
     transition: transform .28s cubic-bezier(.2,.9,.25,1), opacity .22s, width .28s cubic-bezier(.2,.9,.25,1);
     box-shadow: 0 0 24px rgba(239,68,68,.12), 0 6px 30px rgba(0,0,0,.5);
   }
@@ -133,7 +132,7 @@
             mask: radial-gradient(farthest-side, transparent 56%, #000 58%);
     animation: spin 1.6s linear infinite reverse;
   }
-  #bootlog { color: var(--dim); font-size: 12.5px; line-height: 1.9; min-height: 150px; min-width: 360px; }
+  #bootlog { color: var(--dim); font-size: 12.5px; line-height: 1.9; min-height: 168px; min-width: 380px; }
   #bootlog .ok { color: var(--accent); }
   #bootlog .val { color: var(--text); }
   #bootlog .cursor { display: inline-block; width: 7px; height: 13px; background: var(--accent); animation: pulse 1s steps(2) infinite; vertical-align: -2px; }
@@ -164,7 +163,7 @@
 <div id="hud" class="panel">
   <div class="scan"></div>
   <h1>🧠 <b>cml</b> memory core</h1>
-  <div id="status"><span class="led"></span><span>MEMORY CORE ONLINE</span></div>
+  <div id="status"><span class="led"></span><span>MEMORY CORE ONLINE</span><span id="fps"></span></div>
   <div id="stats"></div>
   <div id="readout"></div>
   <input id="q" placeholder="query memory…  ( / to focus, live )"/>
@@ -174,7 +173,7 @@
     <span class="btn" id="b-view">⛶ overview</span>
     <span class="btn" id="b-sound">🔊 sound</span>
   </div>
-  <div id="hint"><kbd>/</kbd> search · <kbd>Enter</kbd> fly · <kbd>Esc</kbd> release · hover = read · click = pin the thought</div>
+  <div id="hint"><kbd>/</kbd> search · <kbd>Enter</kbd> fly · <kbd>Esc</kbd> release · click a session to open its thoughts</div>
 </div>
 
 <script>window.CML_GRAPH = /*%%PAYLOAD%%*/ null;</script>
@@ -193,7 +192,7 @@ const COLORS = {
   memory: "#34d399", wiki: "#c084fc", code: "#22d3ee", coderoot: "#0ea5e9"
 };
 
-/* ---------- sound: synthesized, no files ---------- */
+/* ---------- sound ---------- */
 const AC = window.AudioContext ? new AudioContext() : null;
 let soundOn = localStorage.cmlSound !== "off";
 document.addEventListener("pointerdown", () => { if (AC && AC.state === "suspended") AC.resume(); }, { once: true });
@@ -213,13 +212,14 @@ const sfx = {
   boot:   () => { tone(52, 1.4, "sine", .03); tone(160, .6, "sine", .05, .1, 640); tone(420, .5, "sine", .026, .3, 1500); },
   hover:  () => tone(1500, .028, "sine", .011),
   click:  () => { tone(780, .06, "triangle", .045); tone(1170, .09, "triangle", .03, .05); },
+  openS:  () => { tone(500, .07, "sine", .04, 0, 900); tone(1000, .1, "sine", .03, .06); },
   found:  () => { tone(620, .08, "sine", .05); tone(930, .09, "sine", .045, .08); tone(1400, .12, "sine", .033, .16); },
   none:   () => tone(190, .22, "sawtooth", .02, 0, 100),
   toggle: () => tone(520, .05, "square", .018),
   syn:    () => tone(1800 + Math.random() * 1200, .05, "sine", .005),
 };
 
-/* ---------- starfield (renderer is transparent) ---------- */
+/* ---------- starfield ---------- */
 (function stars() {
   let a = "", b = "";
   for (let i = 0; i < 120; i++) a += `${(Math.random() * 100).toFixed(1)}vw ${(Math.random() * 110).toFixed(1)}vh 0 rgba(245,233,233,${(.10 + Math.random() * .3).toFixed(2)}),`;
@@ -231,26 +231,58 @@ const sfx = {
   document.head.appendChild(st);
 })();
 
-/* ---------- graph: layout was precomputed in Rust — zero physics here ---------- */
+/* ---------- LOD: sessions are closed capsules; their thoughts materialize on click ----------
+   Draw-call budget is the real enemy on integrated GPUs — the default view holds ~400
+   objects instead of ~8,700. Positions were precomputed in Rust, so expansion is instant. */
+const idOf = x => (typeof x === "object" ? x.id : x);
+const parentOf = new Map();
+for (const l of DATA.links) if (l.kind === "leaf" || l.kind === "tether") parentOf.set(idOf(l.target), idOf(l.source));
+const CHILDREN = new Map(); // container id -> message nodes
+const structural = [], memWiki = [];
+for (const n of DATA.nodes) {
+  if (n.group === "center" || n.group === "project" || n.group === "session" || n.group === "coderoot") structural.push(n);
+  else if (n.group === "memory" || n.group === "wiki") memWiki.push(n);
+  else {
+    const p = parentOf.get(n.id);
+    if (!CHILDREN.has(p)) CHILDREN.set(p, []);
+    CHILDREN.get(p).push(n);
+  }
+}
+const expanded = new Set();
+function currentView() {
+  const nodes = [...structural, ...memWiki];
+  for (const s of expanded) nodes.push(...(CHILDREN.get(s) || []));
+  const present = new Set(nodes.map(n => n.id));
+  const links = DATA.links.filter(l => present.has(idOf(l.source)) && present.has(idOf(l.target)));
+  return { nodes, links };
+}
+
 const off = new Set();
 let matched = null, focusSet = null, adj = null;
 
-const Graph = ForceGraph3D({ rendererConfig: { alpha: true, antialias: false, powerPreference: "high-performance" } })(document.getElementById("graph"))
+const Graph = ForceGraph3D({ rendererConfig: { alpha: true, antialias: true, powerPreference: "high-performance" } })(document.getElementById("graph"))
   .backgroundColor("rgba(0,0,0,0)")
-  .graphData(DATA)
+  .graphData(currentView())
   .warmupTicks(0)
   .cooldownTicks(0)
   .enableNodeDrag(false)
   .nodeLabel(() => "")
-  .nodeVal(n => n.val)
+  .nodeVal(n => {
+    if (n.group === "session" || n.group === "coderoot") {
+      const c = (CHILDREN.get(n.id) || []).length;
+      return 5 + Math.sqrt(c) * 0.9;
+    }
+    return n.val;
+  })
   .nodeColor(n => {
     const base = COLORS[n.group] || "#8b949e";
     if (matched) return matched.has(n.id) ? "#ffffff" : base + "22";
     if (focusSet) return focusSet.has(n.id) ? base : base + "18";
+    if (expanded.has(n.id)) return "#f87171";
     return base;
   })
-  .nodeOpacity(0.94)
-  .nodeResolution(6)
+  .nodeOpacity(0.96)
+  .nodeResolution(20)
   .nodeVisibility(n => !(off.has(n.group)))
   .linkVisibility(l => {
     const s = typeof l.source === "object" ? l.source : { group: "" };
@@ -259,8 +291,7 @@ const Graph = ForceGraph3D({ rendererConfig: { alpha: true, antialias: false, po
   })
   .linkColor(l => {
     if (focusSet) {
-      const s = typeof l.source === "object" ? l.source.id : l.source;
-      const t = typeof l.target === "object" ? l.target.id : l.target;
+      const s = idOf(l.source), t = idOf(l.target);
       return (focusSet.has(s) && focusSet.has(t)) ? "#ffffffcc" : "#20101422";
     }
     return l.kind === "spine" ? "#ef444455"
@@ -269,7 +300,7 @@ const Graph = ForceGraph3D({ rendererConfig: { alpha: true, antialias: false, po
       : l.kind === "tether" ? "#0ea5e912" : "#2a1418";
   })
   .linkOpacity(0.4)
-  .linkWidth(l => l.kind === "spine" ? 1.2 : l.kind === "wikilink" ? 1.0 : l.kind === "code" ? 0.6 : 0.3)
+  .linkWidth(l => l.kind === "spine" ? 1.2 : l.kind === "wikilink" ? 1.0 : 0)
   .linkDirectionalParticles(l => l.kind === "spine" ? 2 : l.kind === "wikilink" ? 1 : 0)
   .linkDirectionalParticleSpeed(0.004)
   .linkDirectionalParticleWidth(1.7)
@@ -278,18 +309,18 @@ const Graph = ForceGraph3D({ rendererConfig: { alpha: true, antialias: false, po
   .onNodeClick(handleClick)
   .onBackgroundClick(release);
 
-try { Graph.renderer().setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5)); } catch (e) {}
+try { Graph.renderer().setPixelRatio(Math.min(window.devicePixelRatio || 1, 2)); } catch (e) {}
 window.addEventListener("resize", () => Graph.width(innerWidth).height(innerHeight));
 document.addEventListener("visibilitychange", () =>
   document.hidden ? Graph.pauseAnimation() : Graph.resumeAnimation());
 
 function restyle() { Graph.nodeColor(Graph.nodeColor()); Graph.linkColor(Graph.linkColor()); }
+function refreshView() { Graph.graphData(currentView()); }
 function buildAdj() {
   if (adj) return;
   adj = new Map();
   for (const l of DATA.links) {
-    const s = typeof l.source === "object" ? l.source.id : l.source;
-    const t = typeof l.target === "object" ? l.target.id : l.target;
+    const s = idOf(l.source), t = idOf(l.target);
     if (!adj.has(s)) adj.set(s, new Set());
     if (!adj.has(t)) adj.set(t, new Set());
     adj.get(s).add(t); adj.get(t).add(s);
@@ -297,7 +328,7 @@ function buildAdj() {
 }
 const px = n => n.x ?? n.fx ?? 0, py = n => n.y ?? n.fy ?? 0, pz = n => n.z ?? n.fz ?? 0;
 
-/* ---------- the card: a circle that becomes text ---------- */
+/* ---------- card ---------- */
 const cardPos = document.getElementById("cardpos");
 const card = document.getElementById("card");
 let cardNode = null, pinned = false;
@@ -325,7 +356,7 @@ function hideCard(force) {
 }
 document.getElementById("cardx").addEventListener("click", () => release());
 
-/* ---------- project labels pinned in space ---------- */
+/* ---------- labels + fps in one tracker ---------- */
 const labelNodes = DATA.nodes.filter(n => n.group === "project" || n.group === "center" || n.group === "coderoot");
 const labels = labelNodes.map(n => {
   const el = document.createElement("div");
@@ -335,9 +366,32 @@ const labels = labelNodes.map(n => {
   document.body.appendChild(el);
   return { n, el };
 });
-
-/* one tracker loop drives labels + card position */
-(function track() {
+const fpsEl = document.getElementById("fps");
+let frames = 0, fpsT = performance.now();
+/* adaptive quality: if the renderer can't keep up (weak iGPU, software GL),
+   step down until it can — pixel ratio, sphere detail, particles, stars */
+let qLevel = 0, lowStreak = 0;
+function applyQuality(l) {
+  try {
+    if (l === 1) { Graph.renderer().setPixelRatio(1); Graph.nodeResolution(10); }
+    if (l === 2) {
+      Graph.renderer().setPixelRatio(0.75);
+      Graph.nodeResolution(6);
+      Graph.linkDirectionalParticles(() => 0);
+      document.getElementById("stars").style.display = "none";
+    }
+  } catch (e) {}
+}
+(function track(now) {
+  frames++;
+  if (now - fpsT >= 1000) {
+    const fps = frames;
+    fpsEl.textContent = fps + " fps" + (qLevel ? " ·q" + qLevel : "");
+    frames = 0; fpsT = now;
+    if (fps < 22 && qLevel < 2) {
+      if (++lowStreak >= 2) { qLevel++; applyQuality(qLevel); lowStreak = 0; }
+    } else lowStreak = 0;
+  }
   for (const L of labels) {
     const c = Graph.graph2ScreenCoords(px(L.n), py(L.n), pz(L.n));
     L.el.style.transform = `translate(${(c.x - L.el.offsetWidth / 2).toFixed(1)}px, ${(c.y - 30).toFixed(1)}px)`;
@@ -347,7 +401,7 @@ const labels = labelNodes.map(n => {
     cardPos.style.transform = `translate(${c.x.toFixed(1)}px, ${c.y.toFixed(1)}px)`;
   }
   requestAnimationFrame(track);
-})();
+})(performance.now());
 
 /* ---------- interactions ---------- */
 let lastHover = null, lastTick = 0;
@@ -357,8 +411,11 @@ function handleHover(node) {
   if (node && node !== lastHover) {
     const now = performance.now();
     if (now - lastTick > 90) { sfx.hover(); lastTick = now; }
-    readout.textContent = `▸ ${node.group}${node.project ? " · " + node.project : ""}${node.ts ? " · " + node.ts : ""}`;
-    if (!pinned) showCard(node, false);
+    const kids = (CHILDREN.get(node.id) || []).length;
+    readout.textContent = node.group === "session"
+      ? `▸ session ${node.label} · ${kids} thoughts · click to open`
+      : `▸ ${node.group}${node.project ? " · " + node.project : ""}${node.ts ? " · " + node.ts : ""}`;
+    if (!pinned && node.group !== "session" && node.group !== "coderoot") showCard(node, false);
   }
   if (!node) { readout.textContent = ""; hideCard(false); }
   lastHover = node;
@@ -375,19 +432,33 @@ function focusOn(node) {
   restyle();
 }
 function handleClick(node) {
-  sfx.click(); orbiting = false;
+  orbiting = false;
+  if (node.group === "session" || node.group === "coderoot") {
+    if (expanded.has(node.id)) {
+      expanded.delete(node.id);
+      sfx.click();
+    } else {
+      expanded.add(node.id);
+      sfx.openS();
+    }
+    refreshView();
+    focusOn(node);
+    flyTo(node);
+    return;
+  }
+  sfx.click();
+  if (node.group === "center" || node.group === "project") { hideCard(true); focusOn(node); flyTo(node); return; }
   focusOn(node);
-  const structural = node.group === "center" || node.group === "project" || node.group === "session" || node.group === "coderoot";
-  if (structural) { hideCard(true); flyTo(node); return; }
   showCard(node, true);
   flyTo(node);
 }
 function release() {
-  if (!focusSet && !matched && !pinned) return;
-  focusSet = null; hideCard(true); restyle();
+  if (!focusSet && !matched && !pinned && !expanded.size) return;
+  focusSet = null; expanded.clear(); hideCard(true);
+  refreshView(); restyle();
 }
 
-/* auto-orbit until the user takes the stick */
+/* auto-orbit */
 let angle = 0, orbiting = true;
 const orbit = setInterval(() => {
   if (!orbiting) return clearInterval(orbit);
@@ -397,17 +468,17 @@ const orbit = setInterval(() => {
 ["pointerdown", "wheel"].forEach(ev =>
   document.getElementById("graph").addEventListener(ev, () => { orbiting = false; }, { once: true }));
 
-/* synaptic idle firing */
-const leafLinks = DATA.links.filter(l => l.kind !== "tether");
-if (typeof Graph.emitParticle === "function" && leafLinks.length) {
+/* synaptic firing on always-present links */
+const pulseLinks = DATA.links.filter(l => l.kind === "spine" || l.kind === "wikilink");
+if (typeof Graph.emitParticle === "function" && pulseLinks.length) {
   setInterval(() => {
-    if (document.hidden) return;
-    for (let i = 0; i < 2; i++) Graph.emitParticle(leafLinks[(Math.random() * leafLinks.length) | 0]);
+    if (document.hidden || qLevel >= 2) return;
+    for (let i = 0; i < 2; i++) Graph.emitParticle(pulseLinks[(Math.random() * pulseLinks.length) | 0]);
     if (Math.random() < 0.12) sfx.syn();
   }, 420);
 }
 
-/* ---------- HUD: chips with counts, project nav, live search ---------- */
+/* ---------- HUD ---------- */
 const roleCounts = (DATA.stats && DATA.stats.roles) || {};
 const chipHost = document.getElementById("chips");
 for (const g of ["user", "assistant", "summary", "memory", "wiki", "code"]) {
@@ -441,13 +512,23 @@ let debounce = null;
 function runSearch(fly) {
   const s = q.value.trim().toLowerCase();
   if (!s) { matched = null; restyle(); paintStats(); return; }
-  matched = new Set(DATA.nodes
-    .filter(n => (n.snippet || "").toLowerCase().includes(s) || (n.label || "").toLowerCase().includes(s))
-    .map(n => n.id));
+  matched = new Set();
+  let firstMsg = null;
+  for (const n of DATA.nodes) {
+    if ((n.snippet || "").toLowerCase().includes(s) || (n.label || "").toLowerCase().includes(s)) {
+      matched.add(n.id);
+      const p = parentOf.get(n.id);
+      if (p) matched.add(p); // collapsed sessions glow when they hold a hit
+      if (!firstMsg && n.snippet) firstMsg = n;
+    }
+  }
   restyle(); paintStats(matched.size);
   if (fly) {
-    const first = DATA.nodes.find(n => matched.has(n.id) && n.group !== "project" && n.group !== "session");
-    if (first) { sfx.found(); orbiting = false; flyTo(first); } else sfx.none();
+    if (firstMsg) {
+      const p = parentOf.get(firstMsg.id);
+      if (p && !expanded.has(p)) { expanded.add(p); refreshView(); }
+      sfx.found(); orbiting = false; flyTo(firstMsg);
+    } else sfx.none();
   }
 }
 q.addEventListener("input", () => { clearTimeout(debounce); debounce = setTimeout(() => runSearch(false), 260); });
@@ -462,7 +543,7 @@ document.addEventListener("keydown", e => {
 });
 
 document.getElementById("b-view").addEventListener("click", () => {
-  sfx.click(); release(); matched = null; restyle(); paintStats();
+  sfx.click(); matched = null; release(); restyle(); paintStats();
   Graph.cameraPosition({ x: 0, y: 120, z: 940 }, { x: 0, y: 0, z: 0 }, 1400);
 });
 const bSound = document.getElementById("b-sound");
@@ -497,6 +578,7 @@ function paintStats(extra) {
     ["MEMORY", `${DATA.stats.rows.toLocaleString()} nodes`],
     ["SYNAPSES", `${DATA.links.length.toLocaleString()} links`],
     ["LAYOUT", "precomputed · rust · 0 physics"],
+    ["DETAIL", "session capsules · open on click"],
     ["RENDER", "vendored · offline"],
     ["SYSTEM", "ONLINE"],
   ];
@@ -507,7 +589,7 @@ function paintStats(extra) {
       const pad = ".".repeat(Math.max(2, 16 - k.length));
       log.innerHTML += `<span class="ok">▸</span> ${k} <span style="color:#3a1418">${pad}</span> <span class="${i === lines.length ? "ok" : "val"}">${v}</span>\n`;
       tone(600 + i * 130, .04, "square", .013);
-      setTimeout(next, 150 + Math.random() * 110);
+      setTimeout(next, 140 + Math.random() * 100);
     } else {
       log.innerHTML += '<span class="cursor"></span>';
       sfx.boot();
