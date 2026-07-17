@@ -1,0 +1,16 @@
+{
+  "name": "claude-memory-light",
+  "owner": {
+    "name": "MiracleWeb3",
+    "url": "https://github.com/MiracleWeb3"
+  },
+  "plugins": [
+    {
+      "name": "claude-memory-light",
+      "source": "./",
+      "description": "Search every past session, keep a learning loop and a wiki. One Rust binary, no daemons, no LLM calls.",
+      "category": "memory",
+      "tags": ["memory", "search", "learning", "wiki", "rust"]
+    }
+  ]
+}
