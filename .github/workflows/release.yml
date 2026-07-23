@@ -33,7 +33,7 @@ jobs:
         # SDK's sqlite3.h, which forbids sqlite3_auto_extension (breaks sqlite-vec).
         run: |
           if [ "$RUNNER_OS" = "macOS" ]; then
-            export CMAKE_PREFIX_PATH="$(brew --prefix simdjson);$(brew --prefix sqlite)"
+            export CMAKE_PREFIX_PATH="$(brew --prefix simdjson):$(brew --prefix sqlite)"
           fi
           cmake -S cpp -B cpp/build -DCMAKE_BUILD_TYPE=Release && cmake --build cpp/build -j
       - name: Self-test
