@@ -28,7 +28,7 @@
 ---
 
 > [!IMPORTANT]
-> Claude Code already writes a transcript of every session to `~/.claude/projects/`. Most memory plugins ignore that file and rebuild capture from scratch: lifecycle hooks feeding a background worker, a vector database, summarization calls billed to your token budget. This tool skips capture and indexes what is already on disk.
+> Claude Code already writes a transcript of every session to `~/.claude/projects/`. Most memory plugins ignore that file and rebuild capture from scratch: lifecycle hooks feeding a background worker, a vector database, summarization calls billed to your token budget — an elaborate machine for forgetting most of what happened. This tool skips capture and indexes what is already on disk. All of it.
 
 <div align="center">
 <img src="assets/map.png" width="880" alt="the 3D memory map — every message a star"/>
@@ -167,7 +167,9 @@ claude-mem is the popular one, and it works for plenty of people. It also runs a
 
 The vector gap is closed, and it stayed on-principle: embeddings come from a local [Model2Vec](https://github.com/MinishLab/model2vec-rs) static model (~30 MB, downloads once, then offline), vectors live in the same SQLite file via sqlite-vec, and search fuses BM25 with KNN using reciprocal rank fusion. Run `cml embed` once to turn it on; after that the Stop hook embeds new rows incrementally. Still zero API calls, still no daemon, still one file you own.
 
-**vault-template plugins** (e.g. obsidian-mind) take a different shape: a folder structure plus instructions telling Claude how to file notes into it.
+**vault-template plugins** (e.g. [obsidian-mind](https://github.com/breferrari/obsidian-mind)) are a folder of markdown plus an instruction manual telling Claude how to file notes into it. Read the code before the stars. Of obsidian-mind's 27 commands and agents, three do memory; the rest is performance-review tooling (brag docs, 1:1 trackers, standup generators). The "brain" ships as empty placeholder files. Nothing is captured unless you run a command, so it remembers exactly what you remember to tell it: a diary with extra steps, not memory. Semantic search is outsourced to an optional external engine that wants ~1.6 GB of local models and ~1.28 GB of RAM per reranked query; when it isn't installed, "semantic search" quietly means grep. And the filing instructions are loaded into every session, thousands of tokens deep, before you type a word.
+
+Your memory already exists. It's the transcripts. Index them; don't make a human the capture hook.
 
 | | claude-memory-light | vault-template plugins |
 |---|:---:|:---:|
