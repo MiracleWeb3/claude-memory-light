@@ -25,6 +25,12 @@ set_source_files_properties("${CMAKE_CURRENT_BINARY_DIR}/mapassets.S" PROPERTIES
 #              is the hot path and gets the fastest credible option.
 find_library(SQLITE3_LIB sqlite3 REQUIRED)
 find_library(SIMDJSON_LIB simdjson REQUIRED)
+# Header paths declared explicitly: /usr/include is a default search dir on Linux,
+# but Homebrew's /opt/homebrew/include is not — and macOS must NOT fall back to the
+# SDK's sqlite3.h, which forbids sqlite3_auto_extension (it would silently unhook
+# sqlite-vec). CI points CMAKE_PREFIX_PATH at brew's simdjson + keg-only sqlite.
+find_path(SQLITE3_INC sqlite3.h REQUIRED)
+find_path(SIMDJSON_INC simdjson.h REQUIRED)
 
 # Vendored, not fetched: sqlite-vec is one C file, so it is compiled straight in
 # rather than resolved through a package manager at build time.
@@ -54,7 +60,7 @@ add_library(cml_core STATIC
   src/mapbuild.cpp
   "${CMAKE_CURRENT_BINARY_DIR}/mapassets.S"
 )
-target_include_directories(cml_core PUBLIC src)
+target_include_directories(cml_core PUBLIC src ${SQLITE3_INC} ${SIMDJSON_INC})
 target_link_libraries(cml_core PUBLIC sqlite_vec)
 target_link_libraries(cml_core PUBLIC ${SQLITE3_LIB} ${SIMDJSON_LIB})
 

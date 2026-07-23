@@ -115,9 +115,9 @@ Transcripts stay where Claude Code puts them. `cml` never moves or modifies them
 
 A Stop hook appends your message from each turn to a per-project inbox file, flagged when it reads like a correction. At session start, once five or more signals accumulate, Claude gets a note telling it to distill them into its persistent memory and clear the inbox. The hooks contain no LLM calls. The distillation happens inside a session you were going to run anyway, where the full context already lives.
 
-That same SessionStart hook also briefs you on what's still open: chronic asks that keep recurring across sessions (the logic behind `cml loops`, capped to the top 3), and a menu of wiki topics on file so Claude knows what it can pull in before re-deriving something already written down. Both are skipped on `resume`/`compact` sources — re-injecting static context on every resume is exactly the bloat this is budgeted against — and the whole message reports its own size inline (`[context injected: N.NkB]`).
+That same SessionStart hook also briefs you on what's still open: chronic asks that keep recurring across sessions (the logic behind `cml loops`, capped to the top 3), and a menu of wiki topics on file so Claude knows what it can pull in before re-deriving something already written down. Both are skipped on `resume`/`compact` sources — re-injecting static context on every resume is exactly the bloat this is budgeted against — but the inbox nag above still fires there if it's due. The whole message reports its own size inline (`[context injected: N.NkB]`): measured 1.2kB on a fresh start on this repo's own index, 0.5kB on resume where only the nag can still trigger.
 
-A third hook, on `UserPromptSubmit`, classifies each prompt against a phrase table — correction, preference, decision, method, reference — and once per session per category, injects a one-line nudge to capture it (`cml hint`). It's a suggestion, never a write: the model still decides what's worth keeping. Still zero LLM calls anywhere in the loop, just SQL and string matching.
+A third hook, on `UserPromptSubmit`, classifies each prompt against a phrase table — correction, preference, decision, method, reference — and once per session per category, injects a one-line nudge to capture it (`cml hint`), e.g. *"reads like a durable preference — consider capturing it so future sessions inherit it."* It's a suggestion, never a write: the model still decides what's worth keeping. Still zero LLM calls anywhere in the loop, just SQL and string matching.
 
 ## 📖 the wiki
 
@@ -173,7 +173,7 @@ The vector gap is closed, and it stayed on-principle: embeddings come from a loc
 |---|:---:|:---:|
 | capture | ✅ automatic, every transcript already on disk | ⚠️ manual, only what gets filed via a command |
 | semantic search | ✅ hybrid FTS5 + vectors, in the one binary | ⚠️ typically a separate tool, GB-scale local model |
-| standing context cost | ✅ ~0 standing; briefing self-reports its size when it fires (`context injected: N.NkB`) | ⚠️ always-loaded filing instructions, thousands of tokens/session |
+| standing context cost | ✅ ~0 standing; briefing measured at 1.2kB on a fresh start, 0.5kB on resume | ⚠️ always-loaded filing instructions, thousands of tokens/session |
 
 ## 🧰 cli
 
@@ -189,7 +189,7 @@ The vector gap is closed, and it stayed on-principle: embeddings come from a loc
 | `cml stats` | row counts, DB size |
 | `cml doctor` | environment check, graphify detection |
 | `cml capture` | *(hook)* append turn's user message to the learning inbox |
-| `cml nudge` | *(hook)* SessionStart briefing: learning-inbox nag, open loops, wiki topics — skipped on resume/compact |
+| `cml nudge` | *(hook)* SessionStart briefing: learning-inbox nag (always eligible), plus open loops and wiki topics (skipped on resume/compact) |
 | `cml hint` | *(hook)* UserPromptSubmit: phrase-table classifier nudges a capture, once per session per category |
 
 <kbd>CML_HOME</kbd> moves the data directory (default `~/.claude/claude-memory-light`). <kbd>CML_NUDGE_THRESHOLD</kbd> tunes the nudge, default 5. <kbd>CML_EMBED_MODEL</kbd> swaps the embedding model — `minishlab/potion-base-32M` for better recall, `minishlab/potion-multilingual-128M` for non-English corpora; run `cml embed --all` after switching.

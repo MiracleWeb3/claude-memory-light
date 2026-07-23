@@ -28,7 +28,14 @@ jobs:
         if: runner.os == 'macOS'
         run: brew install cmake sqlite simdjson
       - name: Build
-        run: cmake -S cpp -B cpp/build -DCMAKE_BUILD_TYPE=Release && cmake --build cpp/build -j
+        # macOS: brew's include/lib dirs aren't in clang's default search path, and
+        # sqlite is keg-only — without the prefix path CMake compiles against the
+        # SDK's sqlite3.h, which forbids sqlite3_auto_extension (breaks sqlite-vec).
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            export CMAKE_PREFIX_PATH="$(brew --prefix simdjson);$(brew --prefix sqlite)"
+          fi
+          cmake -S cpp -B cpp/build -DCMAKE_BUILD_TYPE=Release && cmake --build cpp/build -j
       - name: Self-test
         run: ./cpp/build/cml_selftest
       - name: Rename asset
