@@ -19,6 +19,11 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+      # The README release badge is static so shields' GitHub token pool can never
+      # error it. This gate keeps it truthful: tagging a release whose version
+      # isn't in the badge fails here, loudly, instead of shipping a stale README.
+      - name: Badge guard
+        run: grep -q "badge/release-${{ github.ref_name }}-" README.md || { echo "README release badge != ${{ github.ref_name }} — bump the static badge before tagging"; exit 1; }
       # curl is a RUNTIME dependency only — distill exec's the curl binary rather than
       # linking libcurl, same as the original. No -dev package needed for it.
       - name: Install deps (linux)

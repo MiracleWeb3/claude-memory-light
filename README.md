@@ -11,7 +11,7 @@
 <br/>
 
 [![build](https://img.shields.io/github/actions/workflow/status/MiracleWeb3/claude-memory-light/release.yml?style=for-the-badge&logo=githubactions&logoColor=white&label=build)](https://github.com/MiracleWeb3/claude-memory-light/actions)
-[![release](https://img.shields.io/github/v/release/MiracleWeb3/claude-memory-light?style=for-the-badge&logo=github&color=ea580c)](https://github.com/MiracleWeb3/claude-memory-light/releases)
+[![release](https://img.shields.io/badge/release-v2.5.0-ea580c?style=for-the-badge&logo=github)](https://github.com/MiracleWeb3/claude-memory-light/releases)
 [![license](https://img.shields.io/badge/license-MIT-blue?style=for-the-badge)](LICENSE)
 [![c++20](https://img.shields.io/badge/c%2B%2B-20-00599c?style=for-the-badge&logo=cplusplus)](https://en.cppreference.com/w/cpp/20)
 
