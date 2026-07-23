@@ -19,10 +19,20 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+      # curl is a RUNTIME dependency only — distill exec's the curl binary rather than
+      # linking libcurl, same as the original. No -dev package needed for it.
+      - name: Install deps (linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y cmake libsqlite3-dev libsimdjson-dev
+      - name: Install deps (macos)
+        if: runner.os == 'macOS'
+        run: brew install cmake sqlite simdjson
       - name: Build
-        run: cargo build --release
+        run: cmake -S cpp -B cpp/build -DCMAKE_BUILD_TYPE=Release && cmake --build cpp/build -j
+      - name: Self-test
+        run: ./cpp/build/cml_selftest
       - name: Rename asset
-        run: cp target/release/cml ${{ matrix.asset }}
+        run: cp cpp/build/cml ${{ matrix.asset }}
       - name: Upload to release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

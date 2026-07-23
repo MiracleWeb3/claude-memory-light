@@ -1,7 +1,7 @@
 {
   "name": "claude-memory-light",
-  "version": "2.4.0",
-  "description": "Full session memory for Claude Code. Indexes the transcripts you already have into SQLite FTS5, adds a learning loop and a wiki. One Rust binary, no daemons, no LLM calls.",
+  "version": "2.5.0",
+  "description": "Full session memory for Claude Code. Indexes the transcripts you already have into SQLite FTS5, adds a learning loop and a wiki. One C++ binary, no daemons, no LLM calls.",
   "author": {
     "name": "MiracleWeb3",
     "url": "https://github.com/MiracleWeb3"
@@ -9,5 +9,5 @@
   "homepage": "https://github.com/MiracleWeb3/claude-memory-light",
   "repository": "https://github.com/MiracleWeb3/claude-memory-light",
   "license": "MIT",
-  "keywords": ["memory", "fts5", "sqlite", "rust", "learning", "wiki", "zero-token", "no-daemon"]
+  "keywords": ["memory", "fts5", "sqlite", "cpp", "learning", "wiki", "zero-token", "no-daemon"]
 }

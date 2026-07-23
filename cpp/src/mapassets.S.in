@@ -1,0 +1,38 @@
+/* The page's four ingredients, baked into the binary.
+ *
+ * Rust uses include_str!; C++ has no equivalent before C++23's #embed (gcc 15+),
+ * and a 1.3 MB raw string literal makes the compiler chew through a megabyte of
+ * source for no reason. The assembler already knows how to paste a file into
+ * .rodata, so it does. Paths are absolute, substituted by CMake from cpp/assets.
+ */
+    .section .rodata
+
+    .globl cml_map_html
+    .globl cml_map_html_end
+cml_map_html:
+    .incbin "@CML_ASSET_DIR@/map.html"
+cml_map_html_end:
+    .byte 0
+
+    .globl cml_three_js
+    .globl cml_three_js_end
+cml_three_js:
+    .incbin "@CML_ASSET_DIR@/vendor/three.module.js"
+cml_three_js_end:
+    .byte 0
+
+    .globl cml_controls_js
+    .globl cml_controls_js_end
+cml_controls_js:
+    .incbin "@CML_ASSET_DIR@/vendor/OrbitControls.js"
+cml_controls_js_end:
+    .byte 0
+
+    .globl cml_app_js
+    .globl cml_app_js_end
+cml_app_js:
+    .incbin "@CML_ASSET_DIR@/app.js"
+cml_app_js_end:
+    .byte 0
+
+    .section .note.GNU-stack,"",@progbits

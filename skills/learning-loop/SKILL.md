@@ -12,6 +12,7 @@ Frozen model weights can't learn — but persistent memory files loaded each ses
 3. **Consolidate (you, when nudged).** Early in the session, before deep work:
    - Read the inbox file the nudge names.
    - Distill durable items — corrections, preferences, working methods, non-obvious workflows — into your persistent memory (auto-memory files, or the user's convention). Record the user's words for orders/preferences, not a paraphrase.
+   - **Correction-sweep:** when consolidating a correction, run `cml search "<key terms>" --role wiki` and `cml search "<key terms>" --role memory` for prior restatements of the now-stale claim — fix or flag every hit in the same pass. A correction that leaves old restatements standing hasn't corrected anything.
    - **Promote what recurs:** a lesson seen ≥2 times graduates into the always-loaded CLAUDE.md; a rule shaped "always do X before Y" graduates further into a hook or skill.
    - Delete the consolidated lines from the inbox. Drop the noise — most lines are nothing.
 

@@ -18,6 +18,8 @@ One evolving page per topic — not a log, not append-only. When reality changes
 - Link related pages with `[[wikilinks]]`. A link to a page that doesn't exist yet marks something worth writing.
 - Good wiki material: decisions + their why, incident postmortems, non-obvious system setups, recurring procedures. Bad material: session chatter (cml has it), secrets (never).
 - Before creating a page, `cml search <topic> --role wiki` — update the existing page instead of duplicating.
+- Mark inference as inference: a claim you concluded but didn't verify gets an explicit `(unverified)` marker instead of standing as fact.
+- Date-stamp volatile facts: anything that can drift (versions, prices, "currently", ownership) gets `as of YYYY-MM-DD` so future readers know its freshness.
 
 ## Structural companion
 

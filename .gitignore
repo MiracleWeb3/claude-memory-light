@@ -1,7 +1,9 @@
-/target
+cpp/build/
 *.db
 *.db-wal
 *.db-shm
 
 .omc/
 *.key
+cpp/build/
+.pantheon/

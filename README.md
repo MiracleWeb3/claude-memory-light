@@ -6,14 +6,14 @@
 
 <br/>
 
-<img src="https://readme-typing-svg.demolab.com/?font=Fira+Code&size=17&pause=1400&center=true&vCenter=true&width=560&color=EA580C&lines=every+session+becomes+a+star;your+memory%2C+mapped+like+a+galaxy;0+tokens+·+0+daemons+·+1+small+Rust+binary" alt=""/>
+<img src="https://readme-typing-svg.demolab.com/?font=Fira+Code&size=17&pause=1400&center=true&vCenter=true&width=560&color=EA580C&lines=every+session+becomes+a+star;your+memory%2C+mapped+like+a+galaxy;0+tokens+·+0+daemons+·+1+small+C%2B%2B+binary" alt=""/>
 
 <br/>
 
 [![build](https://img.shields.io/github/actions/workflow/status/MiracleWeb3/claude-memory-light/release.yml?style=for-the-badge&logo=githubactions&logoColor=white&label=build)](https://github.com/MiracleWeb3/claude-memory-light/actions)
 [![release](https://img.shields.io/github/v/release/MiracleWeb3/claude-memory-light?style=for-the-badge&logo=github&color=ea580c)](https://github.com/MiracleWeb3/claude-memory-light/releases)
 [![license](https://img.shields.io/github/license/MiracleWeb3/claude-memory-light?style=for-the-badge&color=blue)](LICENSE)
-[![rust](https://img.shields.io/badge/rust-stable-b7410e?style=for-the-badge&logo=rust)](https://www.rust-lang.org/)
+[![c++20](https://img.shields.io/badge/c%2B%2B-20-00599c?style=for-the-badge&logo=cplusplus)](https://en.cppreference.com/w/cpp/20)
 
 ![binary](https://img.shields.io/badge/binary-2.4_MB-success?style=flat-square)
 ![llm calls](https://img.shields.io/badge/LLM_calls-0-success?style=flat-square)
@@ -48,6 +48,9 @@ The second hit in the demo below is real. The first thing this tool found on my 
 | 🪶 **nothing running** | binary executes on a hook, exits in ms; RAM at rest is zero |
 | 🔒 **local only** | one SQLite file you own; nothing leaves your machine |
 | 🧩 **graph companion** | `cml doctor` auto-detects graphify for code-structure maps |
+| 🧭 **session briefing** | SessionStart nudge adds open loops and a wiki topic menu, capped and size-metered, skipped on resume/compact |
+| 🔂 **chronic loops** | `cml loops` surfaces asks that keep recurring across sessions, unresolved |
+| 💡 **prompt hints** | zero-token classifier flags a prompt as correction / preference / decision / method / reference, once per session each |
 
 ## 🚀 install
 
@@ -56,7 +59,7 @@ The second hit in the demo below is real. The first thing this tool found on my 
 /plugin install claude-memory-light
 ```
 
-The plugin fetches a prebuilt binary on first run, or builds with cargo if you have Rust. Then:
+The plugin fetches a prebuilt binary on first run, or builds from source with cmake (needs a C++20 compiler and the sqlite3 + simdjson headers; `curl` is only needed at runtime, and only if you turn on distillation). Then:
 
 ```bash
 cml index --all   # first full index: 50 sessions ≈ 2 s
@@ -112,6 +115,10 @@ Transcripts stay where Claude Code puts them. `cml` never moves or modifies them
 
 A Stop hook appends your message from each turn to a per-project inbox file, flagged when it reads like a correction. At session start, once five or more signals accumulate, Claude gets a note telling it to distill them into its persistent memory and clear the inbox. The hooks contain no LLM calls. The distillation happens inside a session you were going to run anyway, where the full context already lives.
 
+That same SessionStart hook also briefs you on what's still open: chronic asks that keep recurring across sessions (the logic behind `cml loops`, capped to the top 3), and a menu of wiki topics on file so Claude knows what it can pull in before re-deriving something already written down. Both are skipped on `resume`/`compact` sources — re-injecting static context on every resume is exactly the bloat this is budgeted against — and the whole message reports its own size inline (`[context injected: N.NkB]`).
+
+A third hook, on `UserPromptSubmit`, classifies each prompt against a phrase table — correction, preference, decision, method, reference — and once per session per category, injects a one-line nudge to capture it (`cml hint`). It's a suggestion, never a write: the model still decides what's worth keeping. Still zero LLM calls anywhere in the loop, just SQL and string matching.
+
 ## 📖 the wiki
 
 A folder of markdown files, one page per topic, edited in place when facts change. Old states aren't lost; the transcripts keep them. Obsidian opens the folder as a vault. `cml search <topic> --role wiki` finds pages, and the bundled skill keeps Claude writing them.
@@ -128,13 +135,13 @@ And if the repo you're standing in has a graphify knowledge graph, the map picks
 
 It boots like a ship computer: a startup sequence, synthesized interface sounds (WebAudio oscillators, no audio files — the mute button remembers), and idle synaptic pulses traveling the links. Hover a node and it grows toward you; click and the thought opens in a fixed reading panel, with a breadcrumb trail — core ▸ project ▸ session ▸ thought — always showing where you are. Esc walks back up. Controls are the standard vocabulary: drag orbits, right-drag pans, the wheel zooms toward your cursor.
 
-The engine is vendored three.js driven by Rust. The layout is precomputed at generation time (deterministic radial shells, zero physics in the browser), and every node renders through instanced meshes — the entire brain is about **ten draw calls**, which is why it holds 60 fps on the integrated laptop GPU it was built on. An fps meter sits in the HUD, and an adaptive quality ladder steps down (pixel ratio → sphere detail → effects) on any renderer that can't keep up.
+The engine is vendored three.js driven by C++. The layout is precomputed at generation time (deterministic radial shells, zero physics in the browser), and every node renders through instanced meshes — the entire brain is about **ten draw calls**, which is why it holds 60 fps on the integrated laptop GPU it was built on. An fps meter sits in the HUD, and an adaptive quality ladder steps down (pixel ratio → sphere detail → effects) on any renderer that can't keep up.
 
 One static HTML file with the render engine vendored in. Works offline, no CDN, no server. Generating 4,000+ nodes takes well under a second.
 
 ## 🛡️ when it breaks
 
-There is no worker process to die. `capture` and `nudge` exit 0 on every code path, including total failure, so a broken install degrades to "no memory" instead of "no Claude".
+There is no worker process to die. `capture`, `nudge`, and `hint` exit 0 on every code path, including total failure, so a broken install degrades to "no memory" instead of "no Claude".
 
 > [!NOTE]
 > The index is disposable. Transcripts are the source of truth, and everything rebuilds from them in seconds:
@@ -160,6 +167,14 @@ claude-mem is the popular one, and it works for plenty of people. It also runs a
 
 The vector gap is closed, and it stayed on-principle: embeddings come from a local [Model2Vec](https://github.com/MinishLab/model2vec-rs) static model (~30 MB, downloads once, then offline), vectors live in the same SQLite file via sqlite-vec, and search fuses BM25 with KNN using reciprocal rank fusion. Run `cml embed` once to turn it on; after that the Stop hook embeds new rows incrementally. Still zero API calls, still no daemon, still one file you own.
 
+**vault-template plugins** (e.g. obsidian-mind) take a different shape: a folder structure plus instructions telling Claude how to file notes into it.
+
+| | claude-memory-light | vault-template plugins |
+|---|:---:|:---:|
+| capture | ✅ automatic, every transcript already on disk | ⚠️ manual, only what gets filed via a command |
+| semantic search | ✅ hybrid FTS5 + vectors, in the one binary | ⚠️ typically a separate tool, GB-scale local model |
+| standing context cost | ✅ ~0 standing; briefing self-reports its size when it fires (`context injected: N.NkB`) | ⚠️ always-loaded filing instructions, thousands of tokens/session |
+
 ## 🧰 cli
 
 | command | what it does |
@@ -168,12 +183,14 @@ The vector gap is closed, and it stayed on-principle: embeddings come from a loc
 | `cml search <terms> [--project P] [--role R] [--limit N] [--semantic\|--keyword]` | hybrid ranked search |
 | `cml embed [--all]` | build (or rebuild) the semantic index — one-time init, then automatic |
 | `cml forget <rowid...>` \| `--match "<q>" [--yes]` | purge junk memories, blocklisted so reindexing never resurrects them (`--clear` undoes) |
-| `cml distill` | optional LLM curation: a cheap external model (DeepSeek) judges each assistant row — narration dropped, keepers get a one-line gist; runs automatically at index time once a key sits in `deepseek.key` |
+| `cml distill` | optional LLM curation: a cheap external model (DeepSeek by default) judges each assistant row — narration dropped, keepers get a one-line gist; runs automatically at index time once a key sits in `llm.key` |
 | `cml map [--limit N] [--code G] [--no-code] [--no-open]` | build + open the 3D memory map |
+| `cml loops [--days N] [--limit K]` | chronic-loop detection: asks recurring across ≥2 sessions in the window, most-recurrent first (default 30 days, top 10) |
 | `cml stats` | row counts, DB size |
 | `cml doctor` | environment check, graphify detection |
 | `cml capture` | *(hook)* append turn's user message to the learning inbox |
-| `cml nudge` | *(hook)* consolidation reminder once signals pile up |
+| `cml nudge` | *(hook)* SessionStart briefing: learning-inbox nag, open loops, wiki topics — skipped on resume/compact |
+| `cml hint` | *(hook)* UserPromptSubmit: phrase-table classifier nudges a capture, once per session per category |
 
 <kbd>CML_HOME</kbd> moves the data directory (default `~/.claude/claude-memory-light`). <kbd>CML_NUDGE_THRESHOLD</kbd> tunes the nudge, default 5. <kbd>CML_EMBED_MODEL</kbd> swaps the embedding model — `minishlab/potion-base-32M` for better recall, `minishlab/potion-multilingual-128M` for non-English corpora; run `cml embed --all` after switching.
 
@@ -204,10 +221,18 @@ A Model2Vec static embedding model (~30 MB) runs locally — it's a lookup table
 </details>
 
 <details>
+<summary><b>why C++, not Rust?</b></summary>
+<br/>
+
+It started in Rust. sqlite3 and simdjson are C libraries either way, and the Rust build spent a binding crate (rusqlite) reaching code that's already C. The C++ port calls both directly — same two libraries, no binding layer between the binary and the API it's using. Full port, nothing left in Rust.
+
+</details>
+
+<details>
 <summary><b>windows?</b></summary>
 <br/>
 
-Untested. The transcript format and Rust are portable, so it should be close. PRs welcome.
+Untested. The transcript format is the same and the code is portable C++, so it should be close. PRs welcome.
 
 </details>
 
@@ -227,6 +252,10 @@ About 11 MB for 50 sessions / 4,000 messages on my machine. SQLite FTS5 handles 
 - [x] 3d memory map with wikilink edges, offline, single file
 - [x] code-graph layer: graphify's `graph.json` renders in the same map
 - [x] `sqlite-vec` semantic search — local Model2Vec embeddings, hybrid RRF, same file, no daemon
+- [x] Rust → C++ port — sqlite3 and simdjson called directly, no binding layer
+- [x] session briefing — chronic open loops and a wiki topic menu folded into the SessionStart nudge, capped and size-metered
+- [x] `cml loops` — chronic-loop detection: asks that recur across sessions, surfaced from the index
+- [x] `cml hint` — UserPromptSubmit phrase-table classifier that nudges a capture, once per session per category
 - [ ] optional end-of-session digests (batched, single call, opt-in)
 - [ ] windows support
 
