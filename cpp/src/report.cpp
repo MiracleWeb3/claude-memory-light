@@ -97,10 +97,17 @@ int stats() {
     std::error_code ec;
     const double mb = static_cast<double>(fs::file_size(dbp, ec)) / 1e6;
 
-    std::printf("%lld rows (%s) | %lld sessions | %lld files | %.1f MB at %s\n",
+    // Rows are searchable substrate; knowledge is the durable subset the map plots. The
+    // two were read as one number ("1152 brain points") when the second was a fraction of
+    // the first, so both are printed and named.
+    const std::int64_t knowledge =
+        db.scalar("SELECT count(*) FROM distilled WHERE gist != ''") +
+        db.scalar("SELECT count(*) FROM mem WHERE role IN ('memory','wiki')");
+
+    std::printf("%lld rows (%s) | %lld knowledge | %lld sessions | %lld files | %.1f MB at %s\n",
                 static_cast<long long>(msgs), by_role.c_str(),
-                static_cast<long long>(sessions), static_cast<long long>(files),
-                ec ? 0.0 : mb, dbp.string().c_str());
+                static_cast<long long>(knowledge), static_cast<long long>(sessions),
+                static_cast<long long>(files), ec ? 0.0 : mb, dbp.string().c_str());
     return 0;
 }
 

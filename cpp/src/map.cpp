@@ -80,7 +80,7 @@ std::vector<std::string> wikilinks(std::string_view text) {
 
 namespace {
 
-void collect(Db& db, std::size_t limit, MapData& d) {
+void collect(Db& db, std::size_t limit, MapData& d, bool knowledge_only) {
     const auto gists = gist_lookup(db);
     std::unordered_map<std::string, std::size_t> proj_of, sess_of;
 
@@ -94,6 +94,17 @@ void collect(Db& db, std::size_t limit, MapData& d) {
         const std::string session = s.text(3);
         const std::string ts = s.text(4);
         const std::string text = s.text(5);
+
+        // A row without a gist is search substrate, not knowledge: the curator either
+        // has not reached it yet or judged it unremarkable. Plotting those made the map
+        // read as ~1150 facts when the distilled layer holds a fraction of that, so
+        // knowledge is the default and `--raw` restores every row. Notes are exempt —
+        // memory and wiki rows are curated files, and no curator judges them.
+        const bool is_note = (m.role == "memory" || m.role == "wiki");
+        if (knowledge_only && !is_note &&
+            gists.find(stable_key(session, ts, m.role, text)) == gists.end()) {
+            continue;
+        }
 
         // wiki pages hang off the core directly — registering their pseudo-project
         // would put an empty planet on the ring
@@ -185,7 +196,7 @@ void open_in_browser(const fs::path& p) {
 
 int map(const std::vector<std::string>& args) {
     std::size_t limit = 6000;
-    bool open_page = true, no_code = false;
+    bool open_page = true, no_code = false, knowledge_only = true;
     std::optional<fs::path> code_path;
     for (std::size_t i = 0; i < args.size(); ++i) {
         if (args[i] == "--limit") {
@@ -199,6 +210,8 @@ int map(const std::vector<std::string>& args) {
             open_page = false;
         } else if (args[i] == "--no-code") {
             no_code = true;
+        } else if (args[i] == "--raw") {
+            knowledge_only = false;
         } else if (args[i] == "--code" && ++i < args.size()) {
             code_path = args[i];
         }
@@ -216,7 +229,7 @@ int map(const std::vector<std::string>& args) {
     }
 
     MapData d;
-    collect(db, limit, d);
+    collect(db, limit, d, knowledge_only);
     if (code_path) load_code_graph(*code_path, d);
 
     const fs::path dbfile = data_dir() / "index.db";
