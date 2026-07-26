@@ -1,9 +1,15 @@
 // Keyword search over the FTS5 index.
 //
-// The Rust binary fuses two legs — BM25 keyword plus a local-embedding KNN — with
-// reciprocal rank fusion. Only the keyword leg is ported so far, so the fusion is
-// kept (it is four lines and the shape must not drift) while `--semantic` refuses
-// loudly rather than silently returning keyword hits under a semantic flag.
+// Two legs — BM25 keyword plus a local-embedding KNN — fused with reciprocal rank
+// fusion. Both are live; `--semantic` refuses loudly rather than silently returning
+// keyword hits under a semantic flag.
+//
+// The vector leg RERANKS, it does not recall. Measured with equal RRF weight: the
+// query "guest mode zero lookups enrichment" returned "Jarvis mode v1.4.0" from a
+// different project at #1, because a row at vector rank 0 scored identically to the
+// top BM25 hit while sharing not one word with the query. Embeddings over whole short
+// rows put every project's rows in each other's neighbourhood, so a row that matches
+// nothing lexically must not be able to enter the result set at all.
 
 #include <algorithm>
 #include <cstdio>
@@ -131,6 +137,10 @@ int search(const std::vector<std::string>& args) {
         score[hits[i]] += 1.0 / (kRrfK + static_cast<double>(i));
     }
     for (std::size_t i = 0; i < vec_hits.size(); ++i) {
+        // Lexical gate: reorder rows the keyword leg already found, never add new ones.
+        // `--semantic` skips the keyword leg entirely, so it still searches by meaning
+        // alone (score is empty there, and the gate is bypassed with it).
+        if (!semantic_only && score.find(vec_hits[i]) == score.end()) continue;
         score[vec_hits[i]] += 1.0 / (kRrfK + static_cast<double>(i));
     }
     // Deterministic order. The Rust original sorted a Vec built from a HashMap, whose
