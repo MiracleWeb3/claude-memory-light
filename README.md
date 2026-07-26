@@ -11,7 +11,7 @@
 <br/>
 
 [![build](https://img.shields.io/github/actions/workflow/status/MiracleWeb3/claude-memory-light/release.yml?style=for-the-badge&logo=githubactions&logoColor=white&label=build)](https://github.com/MiracleWeb3/claude-memory-light/actions)
-[![release](https://img.shields.io/badge/release-v2.5.0-ea580c?style=for-the-badge&logo=github)](https://github.com/MiracleWeb3/claude-memory-light/releases)
+[![release](https://img.shields.io/badge/release-v2.6.0-ea580c?style=for-the-badge&logo=github)](https://github.com/MiracleWeb3/claude-memory-light/releases)
 [![license](https://img.shields.io/badge/license-MIT-blue?style=for-the-badge)](LICENSE)
 [![c++20](https://img.shields.io/badge/c%2B%2B-20-00599c?style=for-the-badge&logo=cplusplus)](https://en.cppreference.com/w/cpp/20)
 
@@ -50,6 +50,7 @@ The second hit in the demo below is real. The first thing this tool found on my 
 | 🧩 **graph companion** | `cml doctor` auto-detects graphify for code-structure maps |
 | 🧭 **session briefing** | SessionStart nudge adds open loops and a wiki topic menu, capped and size-metered, skipped on resume/compact |
 | 🔂 **chronic loops** | `cml loops` surfaces asks that keep recurring across sessions, unresolved |
+| ⚖️ **durability gate** | keeping and plotting are separate decisions — the map holds a few hundred hard-won facts, not every true sentence |
 | 💡 **prompt hints** | zero-token classifier flags a prompt as correction / preference / decision / method / reference, once per session each |
 
 ## 🚀 install
@@ -129,7 +130,7 @@ A folder of markdown files, one page per topic, edited in place when facts chang
 cml map          # builds and opens it
 ```
 
-Your entire memory as a navigable 3D brain: projects orbit the center, sessions cluster around projects, every message is a shaded orb colored by role. Memory notes and wiki pages link to each other through their `[[wikilinks]]`, so the curated layer renders like Obsidian's graph view, except in three dimensions and sitting next to the conversations it came from. Search flies the camera to matches, chips filter by role, clicking a node shows the text and the `cml search` command to pull it in a terminal.
+Your memory as a navigable 3D brain: projects orbit the center, sessions cluster around projects, every fact is a shaded orb colored by role. The map plots knowledge, not rows — a message earns a point by carrying a durable fact, and everything else stays searchable without becoming one. Most rows never earn one, and the difference is status reports, mode acknowledgments, and answers to questions that will not come up again. `--raw` puts every row back. Memory notes and wiki pages link to each other through their `[[wikilinks]]`, so the curated layer renders like Obsidian's graph view, except in three dimensions and sitting next to the conversations it came from. Search flies the camera to matches, chips filter by role, clicking a node shows the text and the `cml search` command to pull it in a terminal.
 
 And if the repo you're standing in has a graphify knowledge graph, the map picks it up on its own: `graphify-out/graph.json` renders as a cyan code constellation next to your conversations — functions, files, and concepts in the same space as the sessions that wrote them. `--code <path>` points it anywhere, `--no-code` turns it off.
 
@@ -185,10 +186,10 @@ Your memory already exists. It's the transcripts. Index them; don't make a human
 | `cml search <terms> [--project P] [--role R] [--limit N] [--semantic\|--keyword]` | hybrid ranked search |
 | `cml embed [--all]` | build (or rebuild) the semantic index — one-time init, then automatic |
 | `cml forget <rowid...>` \| `--match "<q>" [--yes]` | purge junk memories, blocklisted so reindexing never resurrects them (`--clear` undoes) |
-| `cml distill` | optional LLM curation: a cheap external model (DeepSeek by default) judges each assistant row — narration dropped, keepers get a one-line gist; runs automatically at index time once a key sits in `llm.key` |
-| `cml map [--limit N] [--code G] [--no-code] [--no-open]` | build + open the 3D memory map |
+| `cml distill [--all]` | optional LLM curation: a cheap external model (DeepSeek by default) judges every row on two independent axes — *keep* (is there content?) and *durable* (worth a permanent point?). Undurable rows are kept and stay searchable, they simply carry no gist. Runs automatically at index time once a key sits in `llm.key`; `--all` re-judges from scratch |
+| `cml map [--limit N] [--code G] [--no-code] [--no-open] [--raw]` | build + open the 3D memory map; `--raw` plots every row instead of only knowledge |
 | `cml loops [--days N] [--limit K]` | chronic-loop detection: asks recurring across ≥2 sessions in the window, most-recurrent first (default 30 days, top 10) |
-| `cml stats` | row counts, DB size |
+| `cml stats` | row counts, knowledge count, DB size |
 | `cml doctor` | environment check, graphify detection |
 | `cml capture` | *(hook)* append turn's user message to the learning inbox |
 | `cml nudge` | *(hook)* SessionStart briefing: learning-inbox nag (always eligible), plus open loops and wiki topics (skipped on resume/compact) |
