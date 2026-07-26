@@ -196,7 +196,11 @@ void open_in_browser(const fs::path& p) {
 
 int map(const std::vector<std::string>& args) {
     std::size_t limit = 6000;
-    bool open_page = true, no_code = false, knowledge_only = true;
+    // The code graph is OPT-IN (`--code`). Auto-loading graphify-out/graph.json made `cml map`
+    // depend on the working directory, and it renders badly: the overlay gets one orbital slot —
+    // a project's worth — while holding up to kCodeCap nodes, so 3000 orbs pack into that slot as
+    // a sphere that occludes the brain. Measured 3000 of 3398 nodes: context hiding the subject.
+    bool open_page = true, want_code = false, knowledge_only = true;
     std::optional<fs::path> code_path;
     for (std::size_t i = 0; i < args.size(); ++i) {
         if (args[i] == "--limit") {
@@ -209,17 +213,23 @@ int map(const std::vector<std::string>& args) {
         } else if (args[i] == "--no-open") {
             open_page = false;
         } else if (args[i] == "--no-code") {
-            no_code = true;
+            want_code = false;  // now the default; still accepted so old invocations don't error
         } else if (args[i] == "--raw") {
             knowledge_only = false;
-        } else if (args[i] == "--code" && ++i < args.size()) {
-            code_path = args[i];
+        } else if (args[i] == "--code") {
+            want_code = true;
+            // Path is optional: bare `--code` auto-detects graphify's output.
+            if (i + 1 < args.size() && args[i + 1].rfind("--", 0) != 0) code_path = args[++i];
         }
     }
-    if (!code_path && !no_code) {
+    if (want_code && !code_path) {
         const fs::path autop = "graphify-out/graph.json";
         std::error_code ec;
-        if (fs::is_regular_file(autop, ec)) code_path = autop;
+        if (fs::is_regular_file(autop, ec)) {
+            code_path = autop;
+        } else {
+            std::fprintf(stderr, "cml: --code found no graphify-out/graph.json here\n");
+        }
     }
 
     Db db = open_db();
