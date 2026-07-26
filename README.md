@@ -32,7 +32,7 @@
 
 <div align="center">
 <img src="assets/map.png" width="880" alt="the 3D memory map — every message a star"/>
-<br/><sub>the whole brain, live: 4,276 memories at 60 fps on the laptop iGPU it was built on. The glow is the core, red ganglia are sessions, orange and blue are you and Claude, green is curated memory.</sub>
+<br/><sub>the whole brain, live, at 60 fps on the laptop iGPU it was built on — this is <code>--raw</code>, every row plotted. The default view shows only what earned a gist. The glow is the core, red ganglia are sessions, orange and blue are you and Claude, green is curated memory.</sub>
 </div>
 
 The second hit in the demo below is real. The first thing this tool found on my machine was a conversation I'd forgotten, where Claude and I had already evaluated a memory plugin two weeks earlier and reached the same conclusion. That sold me.
@@ -41,7 +41,7 @@ The second hit in the demo below is real. The first thing this tool found on my 
 
 |   |   |
 |---|---|
-| 🔍 **hybrid search** | every message of every session — FTS5 keywords + local semantic vectors, fused, milliseconds |
+| 🔍 **hybrid search** | every message of every session — BM25 finds, local vectors reorder, milliseconds |
 | 🧠 **learning loop** | per-turn signals collected into an inbox, consolidated into memory Claude actually loads |
 | 📖 **personal wiki** | one markdown page per topic, edited in place, Obsidian-compatible, same index |
 | 🌌 **3d memory map** | `cml map` renders your whole memory as an interactive galaxy — one offline HTML file |
@@ -166,7 +166,7 @@ claude-mem is the popular one, and it works for plenty of people. It also runs a
 | search | ✅ hybrid: FTS5 + local vectors | ✅ FTS5 + vector (Chroma) |
 | vector stack | ✅ [sqlite-vec](https://github.com/asg017/sqlite-vec) in the same db file, 30 MB local model | ❌ Python + Chroma process |
 
-The vector gap is closed, and it stayed on-principle: embeddings come from a local [Model2Vec](https://github.com/MinishLab/model2vec-rs) static model (~30 MB, downloads once, then offline), vectors live in the same SQLite file via sqlite-vec, and search fuses BM25 with KNN using reciprocal rank fusion. Run `cml embed` once to turn it on; after that the Stop hook embeds new rows incrementally. Still zero API calls, still no daemon, still one file you own.
+The vector gap is closed, and it stayed on-principle: embeddings come from a local [Model2Vec](https://github.com/MinishLab/model2vec-rs) static model (~30 MB, downloads once, then offline), vectors live in the same SQLite file via sqlite-vec, and search fuses BM25 with KNN using reciprocal rank fusion — with the vector leg gated behind the keyword one, so it reorders what BM25 found and can never introduce a row that matches nothing. Weighted equally it would: a row sharing not one word with the query once tied the top hit, because embedding short rows whole puts every project in every other project's neighbourhood. `--semantic` still searches by meaning alone. Run `cml embed` once to turn it on; after that the Stop hook embeds new rows incrementally. Still zero API calls, still no daemon, still one file you own.
 
 **vault-template plugins** (e.g. [obsidian-mind](https://github.com/breferrari/obsidian-mind)) are a folder of markdown plus an instruction manual telling Claude how to file notes into it. Read the code before the stars. Of obsidian-mind's 27 commands and agents, three do memory; the rest is performance-review tooling (brag docs, 1:1 trackers, standup generators). The "brain" ships as empty placeholder files. Nothing is captured unless you run a command, so it remembers exactly what you remember to tell it: a diary with extra steps, not memory. Semantic search is outsourced to an optional external engine that wants ~1.6 GB of local models and ~1.28 GB of RAM per reranked query; when it isn't installed, "semantic search" quietly means grep. And the filing instructions are loaded into every session, thousands of tokens deep, before you type a word.
 
