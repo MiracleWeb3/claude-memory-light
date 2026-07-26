@@ -11,7 +11,7 @@
 <br/>
 
 [![build](https://img.shields.io/github/actions/workflow/status/MiracleWeb3/claude-memory-light/release.yml?style=for-the-badge&logo=githubactions&logoColor=white&label=build)](https://github.com/MiracleWeb3/claude-memory-light/actions)
-[![release](https://img.shields.io/badge/release-v2.6.0-ea580c?style=for-the-badge&logo=github)](https://github.com/MiracleWeb3/claude-memory-light/releases)
+[![release](https://img.shields.io/badge/release-v2.6.1-ea580c?style=for-the-badge&logo=github)](https://github.com/MiracleWeb3/claude-memory-light/releases)
 [![license](https://img.shields.io/badge/license-MIT-blue?style=for-the-badge)](LICENSE)
 [![c++20](https://img.shields.io/badge/c%2B%2B-20-00599c?style=for-the-badge&logo=cplusplus)](https://en.cppreference.com/w/cpp/20)
 
@@ -130,9 +130,9 @@ A folder of markdown files, one page per topic, edited in place when facts chang
 cml map          # builds and opens it
 ```
 
-Your memory as a navigable 3D brain: projects orbit the center, sessions cluster around projects, every fact is a shaded orb colored by role. The map plots knowledge, not rows — a message earns a point by carrying a durable fact, and everything else stays searchable without becoming one. Most rows never earn one. On the corpus this was built against, 1,020 rows produce 330 points, and the 690 that stay dark are status reports, mode acknowledgments, and answers to questions that will not come up again. `--raw` puts every row back. Memory notes and wiki pages link to each other through their `[[wikilinks]]`, so the curated layer renders like Obsidian's graph view, except in three dimensions and sitting next to the conversations it came from. Search flies the camera to matches, chips filter by role, clicking a node shows the text and the `cml search` command to pull it in a terminal.
+Your memory as a navigable 3D brain: projects orbit the center, sessions cluster around projects, every fact is a shaded orb colored by role. The map plots knowledge, not rows — a message earns a point by carrying a durable fact, and everything else stays searchable without becoming one. Most rows never earn one. On the corpus this was built against, 1,077 rows produce 369 points, and the 708 that stay dark are status reports, mode acknowledgments, and answers to questions that will not come up again. `--raw` puts every row back. Memory notes and wiki pages link to each other through their `[[wikilinks]]`, so the curated layer renders like Obsidian's graph view, except in three dimensions and sitting next to the conversations it came from. Search flies the camera to matches, chips filter by role, clicking a node shows the text and the `cml search` command to pull it in a terminal.
 
-And if the repo you're standing in has a graphify knowledge graph, the map picks it up on its own: `graphify-out/graph.json` renders as a cyan code constellation next to your conversations — functions, files, and concepts in the same space as the sessions that wrote them. `--code <path>` points it anywhere, `--no-code` turns it off.
+If the repo you're standing in has a graphify knowledge graph, `--code` renders it as a cyan code constellation beside your conversations — functions, files, and concepts in the same space as the sessions that wrote them. It is opt-in on purpose: the overlay occupies a single orbital slot, a project's worth, while carrying up to 3000 nodes, so enabling it packs a solid sphere in front of the brain. Bare `--code` auto-detects `graphify-out/graph.json`; `--code <path>` points it anywhere. For reading code structure on its own, graphify's own viewer is the better tool.
 
 It boots like a ship computer: a startup sequence, synthesized interface sounds (WebAudio oscillators, no audio files — the mute button remembers), and idle synaptic pulses traveling the links. Hover a node and it grows toward you; click and the thought opens in a fixed reading panel, with a breadcrumb trail — core ▸ project ▸ session ▸ thought — always showing where you are. Esc walks back up. Controls are the standard vocabulary: drag orbits, right-drag pans, the wheel zooms toward your cursor.
 
@@ -187,7 +187,7 @@ Your memory already exists. It's the transcripts. Index them; don't make a human
 | `cml embed [--all]` | build (or rebuild) the semantic index — one-time init, then automatic |
 | `cml forget <rowid...>` \| `--match "<q>" [--yes]` | purge junk memories, blocklisted so reindexing never resurrects them (`--clear` undoes) |
 | `cml distill [--all]` | optional LLM curation: a cheap external model (DeepSeek by default) judges every row on two independent axes — *keep* (is there content?) and *durable* (worth a permanent point?). Undurable rows are kept and stay searchable, they simply carry no gist. Runs automatically at index time once a key sits in `llm.key`; `--all` re-judges from scratch |
-| `cml map [--limit N] [--code G] [--no-code] [--no-open] [--raw]` | build + open the 3D memory map; `--raw` plots every row instead of only knowledge |
+| `cml map [--limit N] [--code [G]] [--no-open] [--raw]` | build + open the 3D memory map; `--raw` plots every row instead of only knowledge, `--code` overlays graphify's code graph (opt-in) |
 | `cml loops [--days N] [--limit K]` | chronic-loop detection: asks recurring across ≥2 sessions in the window, most-recurrent first (default 30 days, top 10) |
 | `cml stats` | row counts, knowledge count, DB size |
 | `cml doctor` | environment check, graphify detection |
