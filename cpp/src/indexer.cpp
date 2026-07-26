@@ -8,6 +8,7 @@
 #include <unordered_set>
 
 #include "curate.hpp"
+#include "curatorprompts.hpp"
 #include "db.hpp"
 #include "noise.hpp"
 #include "paths.hpp"
@@ -248,7 +249,10 @@ int index_all(bool force) {
     // the Stop hook stays quick — the backlog drains over turns, or via `cml distill`.
     std::string curated;
     if (const auto key = llm_key()) {
-        const auto [kept, dropped] = distill_new(db, *key, 40, false);
+        auto [kept, dropped] = distill_new(db, *key, 40, false, Rubric::Assistant);
+        const auto [ukept, udropped] = distill_new(db, *key, 40, false, Rubric::User);
+        kept += ukept;
+        dropped += udropped;
         if (kept + dropped > 0) {
             curated = ", curated " + std::to_string(kept) + "+" + std::to_string(dropped) +
                       "dropped";

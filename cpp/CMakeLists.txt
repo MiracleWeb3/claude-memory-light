@@ -54,6 +54,8 @@ add_library(cml_core STATIC
   src/vec.cpp
   src/forget.cpp
   src/distill.cpp
+  src/distillwire.cpp
+  src/curatorprompts.cpp
   src/loops.cpp
   src/hint.cpp
   src/map.cpp

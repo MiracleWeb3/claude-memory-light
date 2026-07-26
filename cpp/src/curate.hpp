@@ -12,6 +12,7 @@
 #include <utility>
 #include <vector>
 
+#include "curatorprompts.hpp"
 #include "db.hpp"
 
 namespace cml {
@@ -48,13 +49,16 @@ struct Verdict {
 // so they can be asserted on: the request body, and the verdicts dug out of the
 // reply. `response` is taken by reference because the parser pads it in place.
 std::string build_judge_request(const std::string& model,
-                                const std::vector<std::pair<std::int64_t, std::string>>& rows);
+                                const std::vector<std::pair<std::int64_t, std::string>>& rows,
+                                Rubric rubric = Rubric::Assistant);
 std::optional<std::vector<Verdict>> parse_verdicts(std::string& response, std::string& err);
 
-// Judges every unjudged assistant/summary row. `cap` limits rows per run so the
-// Stop hook stays fast; nullopt drains everything. Returns (kept, dropped).
-// Index-time curation calls this with cap=40, verbose=false.
+// Judges every unjudged row belonging to `rubric` (Assistant covers assistant and
+// summary rows, User covers the developer's own messages). `cap` limits rows per
+// run so the Stop hook stays fast; nullopt drains everything. Returns (kept,
+// dropped). Index-time curation calls this with cap=40, verbose=false.
 std::pair<std::size_t, std::size_t> distill_new(Db& db, const std::string& key,
-                                                std::optional<std::size_t> cap, bool verbose);
+                                                std::optional<std::size_t> cap, bool verbose,
+                                                Rubric rubric = Rubric::Assistant);
 
 }  // namespace cml
