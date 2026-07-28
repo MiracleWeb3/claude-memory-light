@@ -24,10 +24,17 @@ struct Hit {
 // `exclude_session` drops rows from one session: the live hook excludes the session
 // being typed in (already on screen), and `cml eval` excludes the session a question
 // was asked in (the point is whether the answer is findable from somewhere else).
-// `keyword_only` drops the embedding leg, so `cml eval` can ablate it. It is a
-// measurement switch, not a setting: the hook always runs the full hybrid.
+// Ablation switches for `cml eval`. Measurement only — the hook always runs
+// everything on. `keyword_only` drops the embedding rerank; `text_only` confines the
+// FTS5 match to the text column, which is how the index behaves with no doc2query
+// expansions, without having to throw them away to find out.
+struct RetrieveOpts {
+    bool keyword_only = false;
+    bool text_only = false;
+};
+
 std::vector<Hit> retrieve(Db& db, std::string_view prompt, std::string_view exclude_session,
-                          std::size_t limit, bool keyword_only = false);
+                          std::size_t limit, RetrieveOpts opts = {});
 
 // Retrieve against the incoming prompt and inject what clears the gate.
 // Always prints valid passthrough JSON — a hook must never block the session.

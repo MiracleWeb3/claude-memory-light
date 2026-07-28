@@ -155,7 +155,7 @@ std::size_t term_overlap(std::string_view text, const std::vector<std::string>& 
 }
 
 std::vector<Hit> retrieve(Db& db, std::string_view prompt, std::string_view exclude_session,
-                          std::size_t limit, bool keyword_only) {
+                          std::size_t limit, RetrieveOpts opts) {
     std::vector<Hit> out;
     // A slash-command envelope or a hook injection is not a question to the index.
     if (is_noise(prompt)) return out;
@@ -171,8 +171,13 @@ std::vector<Hit> retrieve(Db& db, std::string_view prompt, std::string_view excl
         if (!joined.empty()) joined += ' ';
         joined += t;
     }
+    // {text} : (...) restricts the match to one column. FTS5 searches every indexed
+    // column by default, which is exactly what makes doc2query work — and what has to
+    // be switched off to measure whether it works.
+    std::string fts = or_query(terms);
+    if (opts.text_only) fts = "{text} : (" + fts + ")";
     const auto ranked =
-        rank_rowids(db, or_query(terms), keyword_only ? std::string{} : joined, kCandidates);
+        rank_rowids(db, fts, opts.keyword_only ? std::string{} : joined, kCandidates);
     if (ranked.empty()) return out;
 
     const auto gists = gist_lookup(db);
