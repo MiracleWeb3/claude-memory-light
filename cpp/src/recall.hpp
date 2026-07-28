@@ -24,14 +24,19 @@ struct Hit {
 // `exclude_session` drops rows from one session: the live hook excludes the session
 // being typed in (already on screen), and `cml eval` excludes the session a question
 // was asked in (the point is whether the answer is findable from somewhere else).
-// Ablation switches for `cml eval`. Measurement only — the hook always runs
-// everything on. `keyword_only` drops the embedding rerank; `text_only` confines the
-// FTS5 match to the text column, which is how the index behaves with no doc2query
-// expansions, without having to throw them away to find out.
+// Ablation switches for `cml eval`. Measurement only — the defaults are what the
+// hook runs.
+//
+// `with_vectors` is OFF by default because the embedding leg was measured to make
+// this path worse in every configuration tried: -5/-9 rows with potion-base-8M,
+// -2/-3 with a real bge-small transformer, and identical numbers ungated. It stays
+// switchable so the finding can be re-checked rather than taken on trust.
+// `text_only` confines the FTS5 match to the text column, which is how the index
+// behaves with no doc2query expansions, without having to throw them away to find out.
 struct RetrieveOpts {
-    bool keyword_only = false;
+    bool with_vectors = false;
     bool text_only = false;
-    bool ungated = false;  // let the embedding leg add candidates, not just reorder
+    bool ungated = false;  // only meaningful with with_vectors
 };
 
 std::vector<Hit> retrieve(Db& db, std::string_view prompt, std::string_view exclude_session,

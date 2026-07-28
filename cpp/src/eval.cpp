@@ -72,8 +72,8 @@ int eval(const std::vector<std::string>& args) {
             if (const long v = next(); v > 0) limit = static_cast<std::size_t>(v);
         } else if (args[i] == "--cross-session") {
             cross_session = true;
-        } else if (args[i] == "--keyword") {
-            opts.keyword_only = true;
+        } else if (args[i] == "--vectors") {
+            opts.with_vectors = true;
         } else if (args[i] == "--no-asks") {
             opts.text_only = true;
         } else if (args[i] == "--ungated") {
@@ -114,7 +114,7 @@ int eval(const std::vector<std::string>& args) {
     const auto pct = [](std::size_t n, std::size_t d) {
         return d ? 100.0 * static_cast<double>(n) / static_cast<double>(d) : 0.0;
     };
-    std::printf("legs            : %s, %s\n", opts.keyword_only ? "BM25 only" : "BM25 + embedding rerank",
+    std::printf("legs            : %s, %s\n", opts.with_vectors ? "BM25 + embedding rerank" : "BM25 only",
                 opts.text_only ? "text column only (no expansions)" : "text + asks");
     std::printf("pairs           : %zu sampled of %zu question/answer turns in the index\n",
                 sample.size(), all.size());

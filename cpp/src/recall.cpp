@@ -10,6 +10,13 @@
 // become wallpaper: three gates keep it quiet — a prompt with fewer than two content
 // words asks nothing, a row sharing fewer than two of them is a coincidence, and a row
 // already injected this session is not injected twice.
+//
+// BM25 only, deliberately. `cml eval` measured the embedding leg making this path worse
+// in every configuration: -5 and -9 rows with potion-base-8M, -2 and -3 with a real
+// bge-small transformer, and unchanged when ungated — because the two-shared-word floor
+// below is itself a lexical requirement, so a purely semantic match cannot survive the
+// pipeline however the fusion is arranged. Vectors still serve `cml search --semantic`,
+// where they do something BM25 cannot: "trackpad dragging" finds touchpad rows.
 
 #include "recall.hpp"
 
@@ -177,7 +184,7 @@ std::vector<Hit> retrieve(Db& db, std::string_view prompt, std::string_view excl
     std::string fts = or_query(terms);
     if (opts.text_only) fts = "{text} : (" + fts + ")";
     const auto ranked =
-        rank_rowids(db, fts, opts.keyword_only ? std::string{} : joined, kCandidates,
+        rank_rowids(db, fts, opts.with_vectors ? joined : std::string{}, kCandidates,
                     nullptr, opts.ungated);
     if (ranked.empty()) return out;
 
