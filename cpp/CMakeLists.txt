@@ -49,6 +49,7 @@ add_library(cml_core STATIC
   src/indexer.cpp
   src/search.cpp
   src/report.cpp
+  src/nudge.cpp
   src/wordpiece.cpp
   src/embed.cpp
   src/vec.cpp

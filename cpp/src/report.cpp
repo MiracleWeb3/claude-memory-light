@@ -1,4 +1,5 @@
-// stats, doctor, and the SessionStart nudge.
+// stats and doctor: what a human types to see whether this thing is actually working.
+// The SessionStart briefing lives in nudge.cpp.
 
 #include <simdjson.h>
 
@@ -47,29 +48,6 @@ std::string which(const char* exe) {
     return {};
 }
 
-// Escape a string for embedding in the JSON the hook prints.
-std::string json_escape(std::string_view s) {
-    std::string out;
-    out.reserve(s.size() + 16);
-    for (const char c : s) {
-        switch (c) {
-            case '"': out += "\\\""; break;
-            case '\\': out += "\\\\"; break;
-            case '\n': out += "\\n"; break;
-            case '\r': out += "\\r"; break;
-            case '\t': out += "\\t"; break;
-            default:
-                if (static_cast<unsigned char>(c) < 0x20) {
-                    char buf[8];
-                    std::snprintf(buf, sizeof buf, "\\u%04x", c);
-                    out += buf;
-                } else {
-                    out.push_back(c);
-                }
-        }
-    }
-    return out;
-}
 
 }  // namespace
 
@@ -165,125 +143,33 @@ int doctor() {
                         "to configure)\n");
         }
     }
+    // Retrieval is the half that fails silently. An index can be perfect, embedded and
+    // curated while nothing ever reads it: `cml search` ran in 2% of sessions before
+    // recall was hooked, and nobody noticed for months because no number reported it.
+    // Worse, a hook can be written, shipped and documented without ever being installed
+    // — the plugin on the machine this was built on sat at 1.4.0 for eleven days while
+    // 2.5.0's hint was in the README. This line is that number. Zero means check the
+    // hook, not the code.
+    // No ratio here on purpose: `mem` counts sessions already on disk, `recalled` counts
+    // sessions the hook has run in since it was installed. Dividing one by the other
+    // reads as a percentage and is not one.
+    {
+        Db db = open_db();
+        const std::int64_t sess = db ? db.scalar("SELECT count(DISTINCT session) FROM recalled") : 0;
+        const std::int64_t rows = db ? db.scalar("SELECT count(*) FROM recalled") : 0;
+        if (sess)
+            std::printf("recall          : fired in %lld sessions, %lld memories injected\n",
+                        static_cast<long long>(sess), static_cast<long long>(rows));
+        else
+            std::printf("recall          : never fired — is the UserPromptSubmit hook "
+                        "installed? (`/plugin update claude-memory-light`)\n");
+    }
     std::printf("hint: keep transcripts forever with \"cleanupPeriodDays\": 3650 in "
                 "~/.claude/settings.json\n");
 
     if (fs::is_regular_file(dbp, ec)) return stats();
     std::printf("run `cml index` to build the index\n");
     return 0;
-}
-
-namespace {
-
-// "name — first summary line" for each wiki page, one flat line, capped. The menu
-// tells the model what it CAN recall; content stays on disk until asked for.
-std::string wiki_topics(std::size_t cap) {
-    std::vector<fs::path> pages;
-    std::error_code ec;
-    for (const auto& e : fs::directory_iterator(data_dir() / "wiki", ec))
-        if (e.path().extension() == ".md") pages.push_back(e.path());
-    std::sort(pages.begin(), pages.end());
-
-    std::string out;
-    std::size_t shown = 0;
-    for (const auto& p : pages) {
-        if (shown == cap) break;
-        std::string summary, line;
-        std::ifstream in(p);
-        while (std::getline(in, line)) {
-            const std::size_t i = line.find_first_not_of(" \t");
-            if (i == std::string::npos || line[i] == '#') continue;
-            summary = squeeze(line, 60);
-            break;
-        }
-        if (!out.empty()) out += " | ";
-        out += p.stem().string() + " — " + (summary.empty() ? "(empty)" : summary);
-        ++shown;
-    }
-    if (pages.size() > shown)
-        out += " | +" + std::to_string(pages.size() - shown) + " more";
-    return out;
-}
-
-}  // namespace
-
-void nudge() {
-    // Whatever happens, the session must proceed.
-    const auto passthrough = []() { std::printf("{\"continue\": true}\n"); };
-
-    std::string payload((std::istreambuf_iterator<char>(std::cin)),
-                        std::istreambuf_iterator<char>());
-    if (payload.empty()) return passthrough();
-
-    simdjson::dom::parser parser;
-    simdjson::dom::element data;
-    if (parser.parse(payload).get(data) != simdjson::SUCCESS) return passthrough();
-
-    std::string_view cwd;
-    if (data["cwd"].get(cwd) != simdjson::SUCCESS || cwd.empty()) return passthrough();
-
-    // resume/compact already carry the conversation; re-injecting the static
-    // sections would be the exact bloat this briefing is budgeted against.
-    std::string_view source;
-    if (data["source"].get(source) != simdjson::SUCCESS) source = {};
-    const bool pointer = (source == "resume" || source == "compact");
-
-    std::size_t threshold = 5;
-    if (const char* t = std::getenv("CML_NUDGE_THRESHOLD")) {
-        const long v = std::strtol(t, nullptr, 10);
-        if (v > 0) threshold = static_cast<std::size_t>(v);
-    }
-
-    const fs::path inbox = inbox_path_for(cwd);
-    std::size_t n = 0;
-    {
-        std::ifstream in(inbox);
-        std::string line;
-        while (std::getline(in, line)) {
-            const std::size_t i = line.find_first_not_of(" \t");
-            if (i != std::string::npos && line.compare(i, 3, "- [") == 0) ++n;
-        }
-    }
-
-    std::vector<std::string> sections;
-    if (n >= threshold)
-        sections.push_back(
-            "[claude-memory-light learning loop] " + std::to_string(n) +
-            " raw signals captured since last consolidation (" + inbox.string() +
-            "). Early this session, before deep work: read the inbox, distill any durable "
-            "correction / preference / non-obvious workflow into persistent memory (and promote "
-            "anything recurring into CLAUDE.md), then delete the consolidated lines. Drop the "
-            "noise — most lines are nothing. Full-history recall is available via `cml search`.");
-
-    if (!pointer) {
-        if (Db db = open_db()) {
-            const auto loops = loop_lines(db, 30, 3);
-            if (!loops.empty()) {
-                std::string s = "[cml] open loops — asks that keep coming back unresolved:";
-                for (const auto& l : loops) s += " // " + l;
-                sections.push_back(std::move(s));
-            }
-        }
-        if (std::string topics = wiki_topics(8); !topics.empty())
-            sections.push_back("[cml] wiki topics on file (recall: cml search --role wiki): " +
-                               topics);
-    }
-    if (sections.empty()) return passthrough();
-
-    std::string msg;
-    for (const auto& s : sections) {
-        if (!msg.empty()) msg += "\n\n";
-        msg += s;
-    }
-    char meter[40];
-    std::snprintf(meter, sizeof meter, " [context injected: %.1fkB]",
-                  static_cast<double>(msg.size()) / 1000.0);
-    msg += meter;
-
-    std::printf(
-        "{\"continue\": true, \"hookSpecificOutput\": {\"hookEventName\": \"SessionStart\", "
-        "\"additionalContext\": \"%s\"}}\n",
-        json_escape(msg).c_str());
 }
 
 }  // namespace cml
