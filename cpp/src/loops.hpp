@@ -7,6 +7,7 @@
 
 #include <cstddef>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace cml {
@@ -25,7 +26,10 @@ std::vector<std::string> group_recurring(const std::vector<Ask>& asks,
                                          std::size_t min_sessions, std::size_t limit);
 
 // Query + group over the live index; shared by the CLI and the SessionStart brief.
-std::vector<std::string> loop_lines(Db& db, int days, std::size_t limit);
+// `project` scopes the window to one project when non-empty. A chronic ask from a
+// different repo is not this project's open thread.
+std::vector<std::string> loop_lines(Db& db, int days, std::size_t limit,
+                                    std::string_view project = {});
 
 // cml loops [--days N] [--limit K]
 int loops(const std::vector<std::string>& args);

@@ -61,6 +61,7 @@ add_library(cml_core STATIC
   src/hint.cpp
   src/recall.cpp
   src/eval.cpp
+  src/state.cpp
   src/encoder/safetensors.cpp
   src/encoder/kernels.cpp
   src/encoder/vecmath.cpp

@@ -23,6 +23,7 @@
 #include "noise.hpp"
 #include "paths.hpp"
 #include "search.hpp"
+#include "state.hpp"
 
 namespace fs = std::filesystem;
 
@@ -108,6 +109,17 @@ void nudge() {
             "correction / preference / non-obvious workflow into persistent memory (and promote "
             "anything recurring into CLAUDE.md), then delete the consolidated lines. Drop the "
             "noise — most lines are nothing. Full-history recall is available via `cml search`.");
+
+    // The standing brief goes in on EVERY start, resume and compact included. The
+    // other sections are skipped on those sources because the conversation still
+    // carries them — but compaction is the precise moment the context was destroyed,
+    // which makes it the moment state most needs restating, not least. Skipping it
+    // there was backwards.
+    if (Db db = open_db()) {
+        const std::string proj = project_label(flatten(cwd));
+        if (std::string st = project_state(db, proj, 1400); !st.empty())
+            sections.push_back(std::move(st));
+    }
 
     if (!pointer) {
         if (Db db = open_db()) {

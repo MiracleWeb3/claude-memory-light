@@ -20,6 +20,7 @@
 #include "map.hpp"
 #include "recall.hpp"
 #include "search.hpp"
+#include "state.hpp"
 #include "vec.hpp"
 
 namespace cml {
@@ -34,7 +35,7 @@ int usage() {
         "     [--semantic|--keyword] | forget <rowid...> | forget --match \"<q>\" [--yes]\n"
         "     | distill [--all] | embed [--all] | map [--limit N] [--no-open] [--raw]\n"
         "     | loops [--days N] [--limit K] | stats | doctor | capture | nudge | hint\n"
-        "     | recall | eval [-k N] [--limit N]\n");
+        "     | recall | eval [-k N] [--limit N] | state [--project P]\n");
     return 0;
 }
 
@@ -78,6 +79,7 @@ int main(int argc, char** argv) {
     if (cmd == "map") return cml::map(rest);
     if (cmd == "loops") return cml::loops(rest);
     if (cmd == "eval") return cml::eval(rest);
+    if (cmd == "state") return cml::state_cmd(rest);
 
     if (!cmd.empty() && cmd != "help" && cmd != "--help" && cmd != "-h") {
         std::fprintf(stderr, "cml: unknown or unported command '%.*s'\n",

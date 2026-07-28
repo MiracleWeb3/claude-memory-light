@@ -92,13 +92,19 @@ std::vector<std::string> group_recurring(const std::vector<Ask>& asks,
     return out;
 }
 
-std::vector<std::string> loop_lines(Db& db, int days, std::size_t limit) {
+std::vector<std::string> loop_lines(Db& db, int days, std::size_t limit,
+                                    std::string_view project) {
     const std::string cutoff =
         iso_minute(now_secs() - static_cast<std::int64_t>(days) * 86400).substr(0, 10);
     std::vector<Ask> asks;
-    Stmt s(db, "SELECT text, session, ts FROM mem WHERE role='user' AND ts >= ?1 ORDER BY ts");
+    Stmt s(db, project.empty()
+                   ? "SELECT text, session, ts FROM mem WHERE role='user' AND ts >= ?1 "
+                     "ORDER BY ts"
+                   : "SELECT text, session, ts FROM mem WHERE role='user' AND ts >= ?1 "
+                     "AND project = ?2 ORDER BY ts");
     if (!s) return {};
     s.bind(1, cutoff);
+    if (!project.empty()) s.bind(2, project);
     while (s.step()) {
         std::string text = s.text(0);
         if (is_noise(text)) continue;
