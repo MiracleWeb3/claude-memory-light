@@ -170,21 +170,22 @@ There is no worker process to die. `capture`, `nudge`, `hint`, and `recall` exit
 
 ## ⚖️ vs claude-mem
 
-claude-mem is the popular one, and it works for plenty of people. It also runs a persistent Express worker on port 37777, needs Bun plus a Python vector database, and summarizes your session with LLM calls while you work. Users on Pro plans have burned a [full 5-hour token budget in under 10 messages](https://github.com/thedotmack/claude-mem/issues/618) with it enabled. When its worker dies, hooks have [locked up every prompt in the session](https://github.com/thedotmack/claude-mem/issues?q=worker+unreachable). I read that issue tracker for an afternoon and wrote this instead.
+claude-mem is the popular one, and it works for plenty of people. It also runs a persistent Bun worker on a local HTTP port (default `37700 + uid % 100`, historically 37777), needs Node plus Bun plus a Python vector database, and summarizes your session with LLM calls while you work. Users on Pro plans have burned a [full 5-hour token budget in under 10 messages](https://github.com/thedotmack/claude-mem/issues/618) with it enabled. When the worker doesn't come up, its hook has [failed in a loop and blocked prompts](https://github.com/thedotmack/claude-mem/issues/2926). I read that issue tracker for an afternoon and wrote this instead.
 
 | | claude-memory-light | claude-mem |
 |---|:---:|:---:|
 | background processes | ✅ none | ❌ Express worker, port 37777 |
-| LLM calls per session | ✅ 0 | ❌ ~50 summarization calls |
+| calls against your Claude plan | ✅ never, on any code path | ❌ summarization runs on it |
+| other LLM calls | ⚠️ none by default; optional curation calls a model you configure | ❌ required, built in |
 | extra runtimes | ✅ none | ❌ Bun + Node + Python/uv + Chroma |
 | RAM at rest | ✅ 0 | ❌ 50 MB and up, leak reports exist |
 | hook failure mode | ✅ exit 0, session unaffected | ❌ can block all prompts |
-| works on subscription plans | ✅ that's the point | ⚠️ author says hold off |
+| works on subscription plans | ✅ that's the point | ⚠️ [budget burned in under 10 messages](https://github.com/thedotmack/claude-mem/issues/618) |
 | search | ✅ hybrid: FTS5 + local vectors | ✅ FTS5 + vector (Chroma) |
 | automatic retrieval | ✅ per-prompt, gated and measured | ✅ at session start, progressive disclosure |
 | vector stack | ✅ [sqlite-vec](https://github.com/asg017/sqlite-vec) in the same db file, 30 MB local model | ❌ Python + Chroma process |
 
-The vector gap is closed, and it stayed on-principle: embeddings come from a local [Model2Vec](https://github.com/MinishLab/model2vec-rs) static model (~30 MB, downloads once, then offline), vectors live in the same SQLite file via sqlite-vec, and search fuses BM25 with KNN using reciprocal rank fusion — with the vector leg gated behind the keyword one, so it reorders what BM25 found and can never introduce a row that matches nothing. Weighted equally it would: a row sharing not one word with the query once tied the top hit, because embedding short rows whole puts every project in every other project's neighbourhood. `--semantic` still searches by meaning alone. Run `cml embed` once to turn it on; after that the Stop hook embeds new rows incrementally. Still zero API calls, still no daemon, still one file you own.
+The vector gap is closed, and it stayed on-principle: embeddings come from a local [Model2Vec](https://github.com/MinishLab/model2vec-rs) static model (~30 MB, downloads once, then offline), vectors live in the same SQLite file via sqlite-vec, and search fuses BM25 with KNN using reciprocal rank fusion — with the vector leg gated behind the keyword one, so it reorders what BM25 found and can never introduce a row that matches nothing. Weighted equally it would: a row sharing not one word with the query once tied the top hit, because embedding short rows whole puts every project in every other project's neighbourhood. `--semantic` still searches by meaning alone. Run `cml embed` once to turn it on; after that the Stop hook embeds new rows incrementally. Embedding is local and offline — no API call, no daemon, one file you own.
 
 **vault-template plugins** (e.g. [obsidian-mind](https://github.com/breferrari/obsidian-mind)) are a folder of markdown plus an instruction manual telling Claude how to file notes into it. Read the code before the stars. Of obsidian-mind's 27 commands and agents, three do memory; the rest is performance-review tooling (brag docs, 1:1 trackers, standup generators). The "brain" ships as empty placeholder files. Nothing is captured unless you run a command, so it remembers exactly what you remember to tell it: a diary with extra steps, not memory. Semantic search is outsourced to an optional external engine that wants ~1.6 GB of local models and ~1.28 GB of RAM per reranked query; when it isn't installed, "semantic search" quietly means grep. And the filing instructions are loaded into every session, thousands of tokens deep, before you type a word.
 
@@ -230,7 +231,11 @@ No. One SQLite file in your home directory. No cloud, no sync, no telemetry, no 
 <summary><b>does it cost tokens?</b></summary>
 <br/>
 
-Zero. Indexing and search are pure SQLite. Nothing in the hook path calls a model. That's the reason this exists.
+**None of your Claude budget, on any code path.** That's the reason this exists.
+
+Indexing, search, recall and embedding are pure local compute — SQLite plus a local embedding model. No network, no model call.
+
+One feature is the exception and it is off until you turn it on: **curation** (`cml distill`). If you put a key in `~/.claude/claude-memory-light/llm.key`, the Stop hook will judge new rows through whatever OpenAI-compatible endpoint you configured — DeepSeek by default, capped at 40 rows per rubric per turn. That is a cheap external model you chose and pay for separately; it never touches your Claude plan. Delete the key file and it stops. With no key there is no network call anywhere in this tool.
 
 </details>
 
