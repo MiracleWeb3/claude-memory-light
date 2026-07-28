@@ -18,8 +18,6 @@
 namespace cml::enc {
 namespace {
 
-constexpr float kInvSqrt2 = 0.70710678118654752440F;
-
 #ifdef CML_X86
 __attribute__((target("avx2,fma"))) float hsum(__m256 v) {
     __m128 lo = _mm_add_ps(_mm256_castps256_ps128(v), _mm256_extractf128_ps(v, 1));
@@ -112,12 +110,73 @@ __attribute__((target("avx2,fma"))) void linear_avx2(const float* A, const float
     }
 }
 
+// Four keys per pass. A head is 32 floats — four AVX2 vectors — so scoring one key at
+// a time spends a horizontal sum on every four FMAs, and the hsum costs more than the
+// arithmetic it finishes. Four accumulators amortise it four ways.
+__attribute__((target("avx2,fma"))) void scores_avx2(const float* q, const float* keys,
+                                                     std::size_t stride, std::size_t count,
+                                                     std::size_t n, float scale, float* scores) {
+    std::size_t j = 0;
+    for (; j + 4 <= count; j += 4) {
+        const float* k0 = keys + j * stride;
+        const float* k1 = k0 + stride;
+        const float* k2 = k1 + stride;
+        const float* k3 = k2 + stride;
+        __m256 a0 = _mm256_setzero_ps();
+        __m256 a1 = a0, a2 = a0, a3 = a0;
+        std::size_t e = 0;
+        for (; e + 8 <= n; e += 8) {
+            const __m256 qv = _mm256_loadu_ps(q + e);
+            a0 = _mm256_fmadd_ps(qv, _mm256_loadu_ps(k0 + e), a0);
+            a1 = _mm256_fmadd_ps(qv, _mm256_loadu_ps(k1 + e), a1);
+            a2 = _mm256_fmadd_ps(qv, _mm256_loadu_ps(k2 + e), a2);
+            a3 = _mm256_fmadd_ps(qv, _mm256_loadu_ps(k3 + e), a3);
+        }
+        float s[4] = {hsum(a0), hsum(a1), hsum(a2), hsum(a3)};
+        for (; e < n; ++e) {
+            s[0] += q[e] * k0[e];
+            s[1] += q[e] * k1[e];
+            s[2] += q[e] * k2[e];
+            s[3] += q[e] * k3[e];
+        }
+        for (std::size_t t = 0; t < 4; ++t) scores[j + t] = s[t] * scale;
+    }
+    for (; j < count; ++j) scores[j] = dot8(q, keys + j * stride, n) * scale;
+}
+
+// Four value rows per pass, into two accumulators. The obvious one-row-at-a-time form
+// reloads and rewrites `out` for every single token — two loads and a store to do one
+// FMA — and chains every add on the last. This does one load and one store per four
+// rows, and splits the adds across two chains so neither waits on the other. Measured
+// the larger half of attention before the change.
 __attribute__((target("avx2,fma"))) void mix_avx2(const float* probs, const float* v,
                                                   std::size_t stride, std::size_t count,
                                                   std::size_t n, float* out) {
     const std::size_t n8 = n & ~std::size_t(7);
     for (std::size_t e = 0; e < n; ++e) out[e] = 0.0F;
-    for (std::size_t j = 0; j < count; ++j) {
+    std::size_t j = 0;
+    for (; j + 4 <= count; j += 4) {
+        const __m256 p0 = _mm256_set1_ps(probs[j]);
+        const __m256 p1 = _mm256_set1_ps(probs[j + 1]);
+        const __m256 p2 = _mm256_set1_ps(probs[j + 2]);
+        const __m256 p3 = _mm256_set1_ps(probs[j + 3]);
+        const float* r0 = v + j * stride;
+        const float* r1 = r0 + stride;
+        const float* r2 = r1 + stride;
+        const float* r3 = r2 + stride;
+        for (std::size_t e = 0; e < n8; e += 8) {
+            __m256 a = _mm256_fmadd_ps(p0, _mm256_loadu_ps(r0 + e), _mm256_loadu_ps(out + e));
+            __m256 b = _mm256_mul_ps(p1, _mm256_loadu_ps(r1 + e));
+            a = _mm256_fmadd_ps(p2, _mm256_loadu_ps(r2 + e), a);
+            b = _mm256_fmadd_ps(p3, _mm256_loadu_ps(r3 + e), b);
+            _mm256_storeu_ps(out + e, _mm256_add_ps(a, b));
+        }
+        for (std::size_t e = n8; e < n; ++e) {
+            out[e] += probs[j] * r0[e] + probs[j + 1] * r1[e] + probs[j + 2] * r2[e] +
+                      probs[j + 3] * r3[e];
+        }
+    }
+    for (; j < count; ++j) {
         const __m256 p = _mm256_set1_ps(probs[j]);
         const float* row = v + j * stride;
         for (std::size_t e = 0; e < n8; e += 8) {
@@ -165,7 +224,7 @@ void attention_row(const float* q, const float* keys, std::size_t stride, std::s
                    std::size_t n, float scale, float* scores) {
 #ifdef CML_X86
     if (have_avx2()) {
-        for (std::size_t j = 0; j < count; ++j) scores[j] = dot8(q, keys + j * stride, n) * scale;
+        scores_avx2(q, keys, stride, count, n, scale, scores);
         return;
     }
 #endif
@@ -187,18 +246,6 @@ void attention_mix(const float* probs, const float* values, std::size_t stride,
     }
 }
 
-void softmax_row(float* x, std::size_t n) {
-    if (n == 0) return;
-    const float peak = *std::max_element(x, x + n);  // shift for range, not for meaning
-    double sum = 0.0;
-    for (std::size_t i = 0; i < n; ++i) {
-        x[i] = std::exp(x[i] - peak);
-        sum += x[i];
-    }
-    const float inv = static_cast<float>(1.0 / (sum > 0.0 ? sum : 1.0));
-    for (std::size_t i = 0; i < n; ++i) x[i] *= inv;
-}
-
 void layernorm_row(float* x, std::size_t n, const float* gain, const float* bias, float eps) {
     if (n == 0) return;
     double mean = 0.0;
@@ -214,14 +261,6 @@ void layernorm_row(float* x, std::size_t n, const float* gain, const float* bias
     for (std::size_t i = 0; i < n; ++i) {
         const float norm = static_cast<float>(x[i] - mean) * scale;
         x[i] = gain ? norm * gain[i] + (bias ? bias[i] : 0.0F) : norm;
-    }
-}
-
-void gelu(float* x, std::size_t n) {
-    // The exact erf form, which is what BERT's "gelu" activation means in
-    // transformers — not the tanh approximation.
-    for (std::size_t i = 0; i < n; ++i) {
-        x[i] = 0.5F * x[i] * (1.0F + std::erf(x[i] * kInvSqrt2));
     }
 }
 

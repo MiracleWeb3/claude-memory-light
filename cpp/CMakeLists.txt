@@ -63,6 +63,7 @@ add_library(cml_core STATIC
   src/eval.cpp
   src/encoder/safetensors.cpp
   src/encoder/kernels.cpp
+  src/encoder/vecmath.cpp
   src/encoder/layer.cpp
   src/encoder/encoder.cpp
   src/encoder/hfcache.cpp
