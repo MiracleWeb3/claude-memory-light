@@ -60,7 +60,7 @@ std::vector<Pair> build_pairs(Db& db) {
 
 int eval(const std::vector<std::string>& args) {
     std::size_t k = 3, limit = 400;
-    bool cross_session = false;
+    bool cross_session = false, keyword_only = false;
     for (std::size_t i = 0; i < args.size(); ++i) {
         const auto next = [&]() -> long {
             return (i + 1 < args.size()) ? std::strtol(args[++i].c_str(), nullptr, 10) : 0;
@@ -71,6 +71,8 @@ int eval(const std::vector<std::string>& args) {
             if (const long v = next(); v > 0) limit = static_cast<std::size_t>(v);
         } else if (args[i] == "--cross-session") {
             cross_session = true;
+        } else if (args[i] == "--keyword") {
+            keyword_only = true;
         }
     }
 
@@ -93,7 +95,7 @@ int eval(const std::vector<std::string>& args) {
 
     std::size_t fired = 0, hit = 0, hit_at_1 = 0;
     for (const auto& p : sample) {
-        const auto hits = retrieve(db, p.question, cross_session ? p.session : "", k);
+        const auto hits = retrieve(db, p.question, cross_session ? p.session : "", k, keyword_only);
         if (hits.empty()) continue;
         ++fired;
         for (std::size_t i = 0; i < hits.size(); ++i) {
@@ -107,6 +109,7 @@ int eval(const std::vector<std::string>& args) {
     const auto pct = [](std::size_t n, std::size_t d) {
         return d ? 100.0 * static_cast<double>(n) / static_cast<double>(d) : 0.0;
     };
+    std::printf("legs            : %s\n", keyword_only ? "BM25 only" : "BM25 + embedding rerank");
     std::printf("pairs           : %zu sampled of %zu question/answer turns in the index\n",
                 sample.size(), all.size());
     std::printf("fired           : %zu (%.0f%%) — the rest were gated out as asking nothing\n",

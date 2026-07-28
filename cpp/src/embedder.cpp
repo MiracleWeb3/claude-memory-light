@@ -24,8 +24,14 @@ Embedder Embedder::load(std::string& error) {
     const char* want = std::getenv("CML_EMBED_BACKEND");
     const std::string backend = want ? want : "";
 
+    // Static is the DEFAULT, and stays that way until the transformer is fast enough to
+    // re-embed a corpus in minutes rather than an hour and a half. Preferring the
+    // encoder whenever its weights happened to be cached was worse than slow: the two
+    // backends have different widths, the stored 256-dim vectors stopped matching the
+    // 384-dim query, and the width guard then refused them — so semantic search silently
+    // became keyword-only for anyone who had ever run the encoder once.
     Embedder e;
-    if (backend != "static") {
+    if (backend == "encoder") {
         std::string enc_err;
         auto enc = Encoder::load(encoder_model_id(), enc_err);
         if (enc.ok()) {
@@ -35,11 +41,8 @@ Embedder Embedder::load(std::string& error) {
         }
         // Asked for the transformer by name: say why it did not load rather than
         // quietly returning worse vectors under the name of better ones.
-        if (backend == "encoder") {
-            error = enc_err;
-            return e;
-        }
-        error = enc_err;  // kept as context if the static path also fails
+        error = enc_err;
+        return e;
     }
 
     std::string stat_err;
@@ -71,5 +74,11 @@ std::vector<float> Embedder::encode(std::string_view text) const {
 }
 
 const std::string& Embedder::id() const { return p_->id; }
+
+std::string embedder_id() {
+    const char* want = std::getenv("CML_EMBED_BACKEND");
+    if (want && std::string(want) == "encoder") return encoder_model_id();
+    return embed_model_id();
+}
 
 }  // namespace cml

@@ -40,4 +40,8 @@ private:
     std::unique_ptr<Impl> p_;
 };
 
+// Which model `load()` would choose, without loading 128 MB of weights to find out.
+// `doctor` needs the name, not the model.
+std::string embedder_id();
+
 }  // namespace cml

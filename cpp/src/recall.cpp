@@ -155,7 +155,7 @@ std::size_t term_overlap(std::string_view text, const std::vector<std::string>& 
 }
 
 std::vector<Hit> retrieve(Db& db, std::string_view prompt, std::string_view exclude_session,
-                          std::size_t limit) {
+                          std::size_t limit, bool keyword_only) {
     std::vector<Hit> out;
     // A slash-command envelope or a hook injection is not a question to the index.
     if (is_noise(prompt)) return out;
@@ -171,7 +171,8 @@ std::vector<Hit> retrieve(Db& db, std::string_view prompt, std::string_view excl
         if (!joined.empty()) joined += ' ';
         joined += t;
     }
-    const auto ranked = rank_rowids(db, or_query(terms), joined, kCandidates);
+    const auto ranked =
+        rank_rowids(db, or_query(terms), keyword_only ? std::string{} : joined, kCandidates);
     if (ranked.empty()) return out;
 
     const auto gists = gist_lookup(db);

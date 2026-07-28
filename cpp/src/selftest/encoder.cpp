@@ -13,11 +13,14 @@
 #include <string>
 #include <vector>
 
-#include "encoder/encoder.hpp"
 #include "encoder/internals.hpp"
 #include "harness.hpp"
 
 namespace cml_test {
+
+// Defined in encodermodel.cpp: everything that needs the downloaded weights.
+void suite_encoder_model();
+
 namespace {
 
 using namespace cml::enc;
@@ -132,6 +135,36 @@ void test_linear() {
     }
 }
 
+// attention_row and attention_mix against a reference written out longhand here.
+// Whichever path the CPU picks is the one measured, so the scalar branches are
+// covered on the machines that take them rather than only on x86.
+void test_attention_kernels() {
+    constexpr std::size_t kTokens = 5, kStride = 96, kHead = 32, kOff = 32;
+    Rng rng;
+    std::vector<float> q(kHead), kv(kTokens * kStride), vv(kTokens * kStride);
+    for (float& x : q) x = rng.next();
+    for (float& x : kv) x = rng.next();
+    for (float& x : vv) x = rng.next();
+
+    const float scale = 0.176776695F;  // 1/sqrt(32)
+    std::vector<float> scores(kTokens);
+    attention_row(q.data(), kv.data() + kOff, kStride, kTokens, kHead, scale, scores.data());
+    for (std::size_t j = 0; j < kTokens; ++j) {
+        float want = 0.0F;
+        for (std::size_t e = 0; e < kHead; ++e) want += q[e] * kv[j * kStride + kOff + e];
+        ok(std::abs(scores[j] - want * scale) < 1e-5F, "attention scores are scaled dots");
+    }
+
+    std::vector<float> probs = {0.1F, 0.2F, 0.3F, 0.15F, 0.25F};
+    std::vector<float> out(kHead, 99.0F);  // must be overwritten, not accumulated into
+    attention_mix(probs.data(), vv.data() + kOff, kStride, kTokens, kHead, out.data());
+    for (std::size_t e = 0; e < kHead; ++e) {
+        float want = 0.0F;
+        for (std::size_t j = 0; j < kTokens; ++j) want += probs[j] * vv[j * kStride + kOff + e];
+        ok(std::abs(out[e] - want) < 1e-5F, "the value mix is a weighted sum over tokens");
+    }
+}
+
 // A three-tensor safetensors file written here, so the reader is checked against
 // bytes this test controls rather than against the model it is supposed to load.
 void test_safetensors() {
@@ -172,64 +205,6 @@ void test_safetensors() {
     std::filesystem::remove(path, ec);
 }
 
-double cosine(const std::vector<float>& a, const std::vector<float>& b) {
-    double d = 0.0;
-    for (std::size_t i = 0; i < a.size(); ++i) d += static_cast<double>(a[i]) * b[i];
-    return d;
-}
-
-// Skipped, not failed, when the weights are not cached: a missing 130 MB download is
-// not a code defect, and this suite must stay runnable offline.
-void test_semantics() {
-    std::string err;
-    const auto model = cml::Encoder::load(cml::encoder_model_id(), err);
-    if (!model.ok()) {
-        std::fprintf(stderr, "  (skipping encoder semantics: %s)\n", err.c_str());
-        return;
-    }
-
-    const auto cat = model.encode("cat");
-    ok(cat.size() == model.dim() && model.dim() == 384, "384-dim vector");
-    ok(std::abs(cosine(cat, cat) - 1.0) < 1e-5, "vectors are L2-normalised");
-    ok(cat == model.encode("cat"), "encoding is deterministic");
-
-    const auto kitten = model.encode("kitten");
-    const auto car = model.encode("automobile");
-    ok(cosine(cat, kitten) > cosine(cat, car), "cat is nearer kitten than automobile");
-
-    // Absolute bounds, not just an ordering. A forward pass with a residual dropped or
-    // a LayerNorm misapplied still ranks these correctly while collapsing the spread,
-    // and only a measured floor catches that. Observed: 0.876 and 0.651.
-    ok(cosine(cat, kitten) > 0.80 && cosine(cat, car) < 0.72, "the spread is bge-sized");
-
-    // The whole reason for running twelve layers instead of a lookup table: the same
-    // word in two senses must not land on the same vector. Observed: 0.635 vs 0.524.
-    const auto river = model.encode("he sat on the river bank watching the water");
-    const auto money = model.encode("she went to the bank to deposit her paycheck");
-    const auto loan = model.encode("the bank approved his mortgage application");
-    ok(cosine(money, loan) > cosine(money, river), "context separates the two banks");
-
-    // Attention and position embeddings, proven rather than assumed: these two share
-    // every token, so any bag-of-tokens model returns exactly 1. Observed: 0.977.
-    ok(cosine(model.encode("dog bites man"), model.encode("man bites dog")) < 0.995,
-       "word order changes the vector");
-
-    const auto ask = model.encode("how do I reset my password");
-    ok(cosine(ask, model.encode("I forgot my login credentials")) > 0.70,
-       "a paraphrase with no shared content word still matches");
-    ok(cosine(ask, model.encode("the capital of France is Paris")) < 0.55,
-       "an unrelated sentence does not");
-
-    for (const char* hard : {"", "   ", "\xff\xfe", "日本語", "a"}) {
-        ok(model.encode(hard).size() == 384, "no crash on awkward input");
-    }
-    // 512 positions is the hard limit; more text than that must truncate, not read
-    // past the end of the position embedding table.
-    std::string huge;
-    while (huge.size() < 40000) huge += "the quick brown fox jumps over the lazy dog. ";
-    ok(model.encode(huge).size() == 384, "input past max_position_embeddings truncates");
-}
-
 }  // namespace
 
 void suite_encoder() {
@@ -237,8 +212,9 @@ void suite_encoder() {
     test_layernorm();
     test_gelu();
     test_linear();
+    test_attention_kernels();
     test_safetensors();
-    test_semantics();
+    suite_encoder_model();
 }
 
 }  // namespace cml_test

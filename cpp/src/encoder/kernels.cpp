@@ -40,10 +40,14 @@ __attribute__((target("avx2,fma"))) float dot8(const float* a, const float* b, s
     return s;
 }
 
-// Four output columns at a time so each loaded activation vector feeds four FMAs,
-// with the four weight rows (6 KB at hidden=384) resident in L1 across every row of
-// A. The column loop is outermost for exactly that reason: the weights are the big
-// operand and must be streamed once, not once per token.
+// A 2x4 register tile: two rows of A against four columns of B, giving eight
+// independent FMA chains. That number is the whole point — an FMA has 4-cycle
+// latency and two can issue per cycle, so eight in flight is the minimum that keeps
+// both ports busy. The obvious 1x4 version runs at half this machine's peak for that
+// reason alone. Six loads feed those eight FMAs, comfortably inside two loads/cycle.
+//
+// The column loop stays outermost so the four weight rows (6 KB at hidden=384) stay
+// in L1 across every row of A: the weights are the big operand and get streamed once.
 __attribute__((target("avx2,fma"))) void linear_avx2(const float* A, const float* B,
                                                      const float* bias, float* C, std::size_t M,
                                                      std::size_t N, std::size_t K) {
@@ -53,28 +57,52 @@ __attribute__((target("avx2,fma"))) void linear_avx2(const float* A, const float
         const float* b1 = b0 + K;
         const float* b2 = b1 + K;
         const float* b3 = b2 + K;
-        for (std::size_t m = 0; m < M; ++m) {
-            const float* a = A + m * K;
-            __m256 a0 = _mm256_setzero_ps();
-            __m256 a1 = a0, a2 = a0, a3 = a0;
+        std::size_t m = 0;
+        for (; m + 2 <= M; m += 2) {
+            const float* a0 = A + m * K;
+            const float* a1 = a0 + K;
+            __m256 c00 = _mm256_setzero_ps();
+            __m256 c01 = c00, c02 = c00, c03 = c00;
+            __m256 c10 = c00, c11 = c00, c12 = c00, c13 = c00;
             std::size_t k = 0;
             for (; k + 8 <= K; k += 8) {
-                const __m256 av = _mm256_loadu_ps(a + k);
-                a0 = _mm256_fmadd_ps(av, _mm256_loadu_ps(b0 + k), a0);
-                a1 = _mm256_fmadd_ps(av, _mm256_loadu_ps(b1 + k), a1);
-                a2 = _mm256_fmadd_ps(av, _mm256_loadu_ps(b2 + k), a2);
-                a3 = _mm256_fmadd_ps(av, _mm256_loadu_ps(b3 + k), a3);
+                const __m256 x0 = _mm256_loadu_ps(a0 + k);
+                const __m256 x1 = _mm256_loadu_ps(a1 + k);
+                __m256 w = _mm256_loadu_ps(b0 + k);
+                c00 = _mm256_fmadd_ps(x0, w, c00);
+                c10 = _mm256_fmadd_ps(x1, w, c10);
+                w = _mm256_loadu_ps(b1 + k);
+                c01 = _mm256_fmadd_ps(x0, w, c01);
+                c11 = _mm256_fmadd_ps(x1, w, c11);
+                w = _mm256_loadu_ps(b2 + k);
+                c02 = _mm256_fmadd_ps(x0, w, c02);
+                c12 = _mm256_fmadd_ps(x1, w, c12);
+                w = _mm256_loadu_ps(b3 + k);
+                c03 = _mm256_fmadd_ps(x0, w, c03);
+                c13 = _mm256_fmadd_ps(x1, w, c13);
             }
-            float s[4] = {hsum(a0), hsum(a1), hsum(a2), hsum(a3)};
+            float s0[4] = {hsum(c00), hsum(c01), hsum(c02), hsum(c03)};
+            float s1[4] = {hsum(c10), hsum(c11), hsum(c12), hsum(c13)};
             for (std::size_t t = k; t < K; ++t) {
-                const float av = a[t];
-                s[0] += av * b0[t];
-                s[1] += av * b1[t];
-                s[2] += av * b2[t];
-                s[3] += av * b3[t];
+                const float* bp[4] = {b0, b1, b2, b3};
+                for (std::size_t j = 0; j < 4; ++j) {
+                    s0[j] += a0[t] * bp[j][t];
+                    s1[j] += a1[t] * bp[j][t];
+                }
             }
+            float* c0 = C + m * N + n0;
+            float* c1 = c0 + N;
+            for (std::size_t j = 0; j < 4; ++j) {
+                const float bj = bias ? bias[n0 + j] : 0.0F;
+                c0[j] = s0[j] + bj;
+                c1[j] = s1[j] + bj;
+            }
+        }
+        for (; m < M; ++m) {  // odd last row, one of M — cost is noise
             float* c = C + m * N + n0;
-            for (std::size_t j = 0; j < 4; ++j) c[j] = s[j] + (bias ? bias[n0 + j] : 0.0F);
+            for (std::size_t j = 0; j < 4; ++j) {
+                c[j] = dot8(A + m * K, B + (n0 + j) * K, K) + (bias ? bias[n0 + j] : 0.0F);
+            }
         }
     }
     for (std::size_t n = n4; n < N; ++n) {  // N is a multiple of 4 in every BERT shape

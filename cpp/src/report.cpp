@@ -16,6 +16,7 @@
 #include "curate.hpp"
 #include "db.hpp"
 #include "embed.hpp"
+#include "embedder.hpp"
 #include "loops.hpp"
 #include "noise.hpp"
 #include "paths.hpp"
@@ -111,12 +112,31 @@ int doctor() {
         if (db && vec_table_exists(db)) {
             const std::int64_t v = db.scalar("SELECT count(*) FROM vec_mem");
             const std::int64_t m = db.scalar("SELECT count(*) FROM mem");
-            std::printf("semantic        : %lld/%lld rows embedded (%s)\n",
+            // Two separate facts, not one guess. Nothing records which model wrote the
+            // stored vectors, so naming one here was a lie as soon as a second backend
+            // existed: it printed potion-base-8M over vectors the transformer had made.
+            // The width is what the vectors actually are; the id is what would be used
+            // now. When they disagree, `cml embed --all` is the answer.
+            std::printf("semantic        : %lld/%lld rows embedded; backend now: %s\n",
                         static_cast<long long>(v), static_cast<long long>(m),
-                        embed_model_id().c_str());
+                        embedder_id().c_str());
         } else {
             std::printf("semantic        : off — run `cml embed` once to enable hybrid search\n");
         }
+    }
+
+    // doc2query coverage. Same silent-failure shape the recall counter exists for: the
+    // expansions can be at zero for every row and nothing else would ever say so.
+    {
+        Db db = open_db();
+        const std::int64_t withasks =
+            db ? db.scalar("SELECT count(*) FROM mem WHERE asks != ''") : 0;
+        const std::int64_t rows = db ? db.scalar("SELECT count(*) FROM mem") : 0;
+        if (withasks)
+            std::printf("expansions      : %lld/%lld rows carry search phrasings\n",
+                        static_cast<long long>(withasks), static_cast<long long>(rows));
+        else
+            std::printf("expansions      : none — `cml distill` writes them, needs a curator key\n");
     }
 
     // Curation status. Omitting this is how I convinced myself curation was off when

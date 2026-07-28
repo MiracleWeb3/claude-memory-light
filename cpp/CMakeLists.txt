@@ -87,6 +87,7 @@ add_executable(cml_selftest
   src/selftest/map.cpp
   src/selftest/ports.cpp
   src/selftest/encoder.cpp
+  src/selftest/encodermodel.cpp
 )
 target_link_libraries(cml_selftest PRIVATE cml_core)
 enable_testing()

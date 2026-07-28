@@ -24,8 +24,10 @@ struct Hit {
 // `exclude_session` drops rows from one session: the live hook excludes the session
 // being typed in (already on screen), and `cml eval` excludes the session a question
 // was asked in (the point is whether the answer is findable from somewhere else).
+// `keyword_only` drops the embedding leg, so `cml eval` can ablate it. It is a
+// measurement switch, not a setting: the hook always runs the full hybrid.
 std::vector<Hit> retrieve(Db& db, std::string_view prompt, std::string_view exclude_session,
-                          std::size_t limit);
+                          std::size_t limit, bool keyword_only = false);
 
 // Retrieve against the incoming prompt and inject what clears the gate.
 // Always prints valid passthrough JSON — a hook must never block the session.
