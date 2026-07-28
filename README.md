@@ -16,7 +16,7 @@
 [![c++20](https://img.shields.io/badge/c%2B%2B-20-00599c?style=for-the-badge&logo=cplusplus)](https://en.cppreference.com/w/cpp/20)
 
 ![binary](https://img.shields.io/badge/binary-2.4_MB-success?style=flat-square)
-![llm calls](https://img.shields.io/badge/LLM_calls-0-success?style=flat-square)
+![llm calls](https://img.shields.io/badge/calls_on_your_Claude_plan-0-success?style=flat-square)
 ![daemons](https://img.shields.io/badge/daemons-0-success?style=flat-square)
 ![platforms](https://img.shields.io/badge/linux-✓-blue?style=flat-square&logo=linux&logoColor=white)
 ![platforms](https://img.shields.io/badge/macos-✓-blue?style=flat-square&logo=apple&logoColor=white)
@@ -41,8 +41,9 @@ The second hit in the demo below is real. The first thing this tool found on my 
 
 |   |   |
 |---|---|
-| 🔍 **hybrid search** | every message of every session — BM25 finds, local vectors reorder, milliseconds |
+| 🔍 **full-text search** | every message of every session, BM25 over FTS5, milliseconds; `--semantic` adds local vectors for meaning-only queries |
 | 🎯 **automatic recall** | every prompt queries the index on `UserPromptSubmit` — your own history arrives as context, with no command to remember |
+| 📏 **it ships its own benchmark** | `cml eval` measures recall@k against your real history, no labelling — the only published retrieval number of any Claude Code memory plugin |
 | 🧠 **learning loop** | per-turn signals collected into an inbox, consolidated into memory Claude actually loads |
 | 📖 **personal wiki** | one markdown page per topic, edited in place, Obsidian-compatible, same index |
 | 🌌 **3d memory map** | `cml map` renders your whole memory as an interactive galaxy — one offline HTML file |
@@ -127,7 +128,7 @@ The gates are what keep it from becoming wallpaper, and they were tuned against 
 - **echo** — a row that *is* your prompt, asked once before, tells Claude nothing that isn't already on screen. The answer to it might; the echo never does.
 - **novelty** — a row already injected this session is not injected again.
 
-Measured over 400 real prompts sampled from those transcripts: fires on **28%**, mean **2.1** hits, **~550 bytes** injected. One FTS5 query plus a KNN rerank — the whole hook, cold, is **18 ms**. Still no LLM call anywhere in it.
+Fires on about half the prompts it sees, mean **2.1** hits, **~550 bytes** injected, and the whole hook runs in **milliseconds**. One FTS5 query — the embedding leg was measured to make this path worse and was removed from it (see [the number](#the-number)). Still no LLM call anywhere in it.
 
 ## 🔁 the learning loop
 
@@ -181,11 +182,45 @@ claude-mem is the popular one, and it works for plenty of people. It also runs a
 | RAM at rest | ✅ 0 | ❌ 50 MB and up, leak reports exist |
 | hook failure mode | ✅ exit 0, session unaffected | ❌ can block all prompts |
 | works on subscription plans | ✅ that's the point | ⚠️ [budget burned in under 10 messages](https://github.com/thedotmack/claude-mem/issues/618) |
-| search | ✅ hybrid: FTS5 + local vectors | ✅ FTS5 + vector (Chroma) |
-| automatic retrieval | ✅ per-prompt, gated and measured | ✅ at session start, progressive disclosure |
-| vector stack | ✅ [sqlite-vec](https://github.com/asg017/sqlite-vec) in the same db file, 30 MB local model | ❌ Python + Chroma process |
+| search | ✅ BM25 + doc2query expansions; vectors on `--semantic` | ✅ FTS5 + vector (Chroma) |
+| automatic retrieval | ✅ every prompt, gated, **measured** | ✅ at session start, progressive disclosure |
+| what's kept | ✅ every message, verbatim, forever | ⚠️ an LLM summary; the rest is gone |
+| sessions from before you installed it | ✅ all of them — the transcripts were already there | ❌ none |
+| a search hit is | ✅ the actual message | ⚠️ a paraphrase of it |
+| retrieval quality | ✅ **published, with the command to reproduce it** | ❓ no number published |
 
-The vector gap is closed, and it stayed on-principle: embeddings come from a local [Model2Vec](https://github.com/MinishLab/model2vec-rs) static model (~30 MB, downloads once, then offline), vectors live in the same SQLite file via sqlite-vec, and search fuses BM25 with KNN using reciprocal rank fusion — with the vector leg gated behind the keyword one, so it reorders what BM25 found and can never introduce a row that matches nothing. Weighted equally it would: a row sharing not one word with the query once tied the top hit, because embedding short rows whole puts every project in every other project's neighbourhood. `--semantic` still searches by meaning alone. Run `cml embed` once to turn it on; after that the Stop hook embeds new rows incrementally. Embedding is local and offline — no API call, no daemon, one file you own.
+### the number
+
+Every comparison table on the internet, including the one above, is adjectives. So this ships the benchmark instead:
+
+```bash
+cml eval          # recall@k over YOUR history
+```
+
+No labelling needed — when you asked something at turn N, the assistant answered at turn N+1, so that row *is* the ground truth. Replay the question, see whether the answer comes back. On the corpus this was developed against (1,171 rows, 272 question/answer pairs):
+
+```
+fired           : 136 (50%)
+recall@3        : 40 (14.8% of all questions, 29.4% of the ones it answered)
+recall@1        : 30 (11.1%)
+```
+
+That is not a great number. It is a **real** one, it is reproducible on your own machine, and it is the only such number published by any Claude Code memory plugin — so treat any competitor's "semantic understanding" claim, including the one this README used to make, as unmeasured until someone prints a figure next to it.
+
+### what the benchmark cost us
+
+It immediately killed a feature this project had been advertising. `cml eval --vectors` re-runs with the embedding leg on:
+
+| retrieval | recall@3 | recall@1 |
+|---|:---:|:---:|
+| BM25 + doc2query | **40 (14.8%)** | **30 (11.1%)** |
+| \+ embedding rerank | 35 (13.0%) | 21 (7.8%) |
+
+The vector leg was making retrieval **worse** — and the previous version of this section claimed "the vector gap is closed" as a selling point. Four measurements across two corpus states said otherwise, so it was removed from the automatic path. We then wrote a BERT encoder from scratch in C++ (`src/encoder/`, bge-small-en-v1.5 — the model our static one was distilled *from*) to check whether a real contextual model would win. It halved the damage and still lost to plain BM25.
+
+The cause is structural: retrieval requires two shared content words before a row is injected, so a purely semantic match cannot survive the pipeline however the fusion is arranged. Vectors stay for `cml search --semantic`, where they do something BM25 genuinely cannot — asked for *"trackpad dragging"* it returns **touchpad** rows.
+
+**Where claude-mem is ahead:** it compresses. Fifty LLM calls buy a summary of a 200k-token session; we have no equivalent and don't attempt one, because we retrieve the original instead. It is also vastly more adopted, and adoption is not something a benchmark fixes.
 
 **vault-template plugins** (e.g. [obsidian-mind](https://github.com/breferrari/obsidian-mind)) are a folder of markdown plus an instruction manual telling Claude how to file notes into it. Read the code before the stars. Of obsidian-mind's 27 commands and agents, three do memory; the rest is performance-review tooling (brag docs, 1:1 trackers, standup generators). The "brain" ships as empty placeholder files. Nothing is captured unless you run a command, so it remembers exactly what you remember to tell it: a diary with extra steps, not memory. Semantic search is outsourced to an optional external engine that wants ~1.6 GB of local models and ~1.28 GB of RAM per reranked query; when it isn't installed, "semantic search" quietly means grep. And the filing instructions are loaded into every session, thousands of tokens deep, before you type a word.
 
@@ -214,6 +249,7 @@ Your memory already exists. It's the transcripts. Index them; don't make a human
 | `cml nudge` | *(hook)* SessionStart briefing: learning-inbox nag (always eligible), plus open loops and wiki topics (skipped on resume/compact) |
 | `cml hint` | *(hook)* UserPromptSubmit: phrase-table classifier nudges a capture, once per session per category |
 | `cml recall` | *(hook)* UserPromptSubmit: retrieves against the prompt and injects the top matches, gated on rarity, substance, overlap, echo and novelty |
+| `cml eval [-k N] [--limit N] [--vectors] [--no-asks]` | recall@k against your own history; the flags ablate the embedding leg and the doc2query expansions so any claim here stays checkable |
 
 <kbd>CML_HOME</kbd> moves the data directory (default `~/.claude/claude-memory-light`). <kbd>CML_NUDGE_THRESHOLD</kbd> tunes the nudge, default 5. <kbd>CML_EMBED_MODEL</kbd> swaps the embedding model — `minishlab/potion-base-32M` for better recall, `minishlab/potion-multilingual-128M` for non-English corpora; run `cml embed --all` after switching.
 
@@ -284,6 +320,9 @@ About 11 MB for 50 sessions / 4,000 messages on my machine. SQLite FTS5 handles 
 - [x] `cml loops` — chronic-loop detection: asks that recur across sessions, surfaced from the index
 - [x] `cml hint` — UserPromptSubmit phrase-table classifier that nudges a capture, once per session per category
 - [x] `cml recall` — the read half hooked: every prompt retrieves against the index, so recall stops depending on the model remembering to search
+- [x] `cml eval` — recall@k over your own transcripts, no labelling; the first published retrieval number for a Claude Code memory plugin
+- [x] doc2query — the curator writes how you would *search* for a row, indexed beside it
+- [x] a BERT encoder in C++ (`src/encoder/`) — built to test whether contextual vectors beat BM25 here. They do not. Kept for `--semantic`, dropped from the automatic path.
 - [ ] optional end-of-session digests (batched, single call, opt-in)
 - [ ] windows support
 
