@@ -103,16 +103,25 @@ std::string lower(std::string_view s) {
 
 // Keep only terms rare enough to mean something. A term matching nothing is dropped
 // with them: it cannot rank, and it cannot count toward the overlap floor either.
-std::vector<std::string> discriminative(Db& db, const std::vector<std::string>& terms) {
+std::vector<std::string> discriminative(Db& db, const std::vector<std::string>& terms,
+                                        Lane lane) {
     // Counted over `mem` alone, which is conversation. The work lives in `work` and is
     // deliberately not part of this ratio: a stack trace repeats an identifier hundreds
     // of times, and when tool rows shared this table the ceiling moved so far that the
     // gate fired on 99% of prompts instead of 50% — the wallpaper it exists to prevent.
-    const std::int64_t total = db.scalar("SELECT count(*) FROM mem");
+    // Each table judges rarity by its own statistics. Using conversation counts for the
+    // work lane silently deleted the only terms that lane exists for: "reply.cpp" occurs
+    // zero times in anything anyone SAID, so it was dropped as matching nothing, and
+    // "what was that undefined reference in reply.cpp" came back empty with 29,703 tool
+    // rows sitting there holding the answer.
+    const bool tools = lane == Lane::Tools;
+    const std::int64_t total =
+        db.scalar(tools ? "SELECT count(*) FROM work" : "SELECT count(*) FROM mem");
     if (total < kMinCorpus) return terms;  // a young index: let everything through
     const std::int64_t ceiling = std::max(kDfFloor, total * kDfPercent / 100);
 
-    Stmt df(db, "SELECT count(*) FROM mem WHERE mem MATCH ?1");
+    Stmt df(db, tools ? "SELECT count(*) FROM work WHERE work MATCH ?1"
+                      : "SELECT count(*) FROM mem WHERE mem MATCH ?1");
     if (!df) return terms;
     std::vector<std::string> out;
     for (const auto& t : terms) {
@@ -173,7 +182,8 @@ std::vector<Hit> retrieve(Db& db, std::string_view prompt, std::string_view excl
 
     const auto words = content_terms(prompt);
     if (words.size() < kMinTerms) return out;
-    const auto terms = discriminative(db, words);
+    const auto terms =
+        discriminative(db, words, opts.tools ? Lane::Tools : Lane::Conversation);
     if (terms.size() < kMinTerms) return out;
 
     const std::string prompt_flat = squeeze(lower(prompt), 400);
@@ -193,9 +203,15 @@ std::vector<Hit> retrieve(Db& db, std::string_view prompt, std::string_view excl
     if (ranked.empty()) return out;
 
     const auto gists = gist_lookup(db);
-    Stmt fetch(db,
-               "SELECT ts, role, project, session, substr(text,1,400), substr(text,1,64) "
-               "FROM mem WHERE rowid=?1");
+    // Fetch from the SAME table the ranking came from. This read was pinned to `mem`
+    // while the work lane ranked against `work`, so every tool rowid was looked up in
+    // the wrong table and silently produced nothing — the lane was wired end to end and
+    // returned empty for every query it existed to answer.
+    Stmt fetch(db, opts.tools
+                       ? "SELECT ts, role, project, session, substr(text,1,400), "
+                         "substr(text,1,64) FROM work WHERE rowid=?1"
+                       : "SELECT ts, role, project, session, substr(text,1,400), "
+                         "substr(text,1,64) FROM mem WHERE rowid=?1");
     if (!fetch) return out;
 
     for (const std::int64_t rowid : ranked) {
@@ -242,19 +258,35 @@ void recall() {
 
     // Over-fetch: rows already injected this session are skipped below, and the next
     // fresh one should take the freed slot rather than leaving the briefing short.
-    const auto hits = retrieve(db, prompt, session, kMaxHits * 4);
-    if (hits.empty()) return passthrough();
+    const auto conv = retrieve(db, prompt, session, kMaxHits * 4);
+
+    // The work — commands and their output, in its own table. It gets a RESERVED slot,
+    // not an appended one: appending put it after the conversation hits, which had
+    // already spent the whole three-line budget, so 29,703 tool rows stayed unreachable
+    // exactly as if the lane had never been wired up. A lane that only runs when the
+    // other lane comes up short is not wired up.
+    RetrieveOpts work_opts;
+    work_opts.tools = true;
+    const auto work = retrieve(db, prompt, session, 2, work_opts);
+    if (conv.empty() && work.empty()) return passthrough();
 
     Stmt mark(db, "INSERT OR IGNORE INTO recalled(session, key) VALUES(?1, ?2)");
+    const auto fresh = [&](const Hit& h) {
+        if (session.empty() || !mark) return true;
+        mark.reset();
+        mark.bind(1, session).bind(2, h.key);
+        return mark.run() && sqlite3_changes(db.raw()) != 0;
+    };
+
     std::vector<std::string> lines;
-    for (const auto& h : hits) {
+    const std::size_t conv_budget = work.empty() ? kMaxHits : kMaxHits - 1;
+    for (const auto& h : conv) {
+        if (lines.size() >= conv_budget) break;
+        if (fresh(h)) lines.push_back(h.line);
+    }
+    for (const auto& h : work) {
         if (lines.size() >= kMaxHits) break;
-        if (!session.empty() && mark) {
-            mark.reset();
-            mark.bind(1, session).bind(2, h.key);
-            if (!mark.run() || sqlite3_changes(db.raw()) == 0) continue;  // already injected
-        }
-        lines.push_back(h.line);
+        if (fresh(h)) lines.push_back("(ran) " + h.line);
     }
     if (lines.empty()) return passthrough();
 
