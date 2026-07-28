@@ -11,7 +11,7 @@
 <br/>
 
 [![build](https://img.shields.io/github/actions/workflow/status/MiracleWeb3/claude-memory-light/release.yml?style=for-the-badge&logo=githubactions&logoColor=white&label=build)](https://github.com/MiracleWeb3/claude-memory-light/actions)
-[![release](https://img.shields.io/badge/release-v2.6.1-ea580c?style=for-the-badge&logo=github)](https://github.com/MiracleWeb3/claude-memory-light/releases)
+[![release](https://img.shields.io/badge/release-v2.7.0-ea580c?style=for-the-badge&logo=github)](https://github.com/MiracleWeb3/claude-memory-light/releases)
 [![license](https://img.shields.io/badge/license-MIT-blue?style=for-the-badge)](LICENSE)
 [![c++20](https://img.shields.io/badge/c%2B%2B-20-00599c?style=for-the-badge&logo=cplusplus)](https://en.cppreference.com/w/cpp/20)
 
@@ -21,7 +21,7 @@
 ![platforms](https://img.shields.io/badge/linux-✓-blue?style=flat-square&logo=linux&logoColor=white)
 ![platforms](https://img.shields.io/badge/macos-✓-blue?style=flat-square&logo=apple&logoColor=white)
 
-**[install](#-install)** · **[use](#-use)** · **[the map](#-the-map)** · **[how it works](#-how-it-works)** · **[learning loop](#-the-learning-loop)** · **[wiki](#-the-wiki)** · **[vs claude-mem](#%EF%B8%8F-vs-claude-mem)** · **[cli](#-cli)** · **[faq](#-faq)**
+**[install](#-install)** · **[use](#-use)** · **[recall](#-recall--the-read-half)** · **[the map](#-the-map)** · **[how it works](#-how-it-works)** · **[learning loop](#-the-learning-loop)** · **[wiki](#-the-wiki)** · **[vs claude-mem](#%EF%B8%8F-vs-claude-mem)** · **[cli](#-cli)** · **[faq](#-faq)**
 
 </div>
 
@@ -42,6 +42,7 @@ The second hit in the demo below is real. The first thing this tool found on my 
 |   |   |
 |---|---|
 | 🔍 **hybrid search** | every message of every session — BM25 finds, local vectors reorder, milliseconds |
+| 🎯 **automatic recall** | every prompt queries the index on `UserPromptSubmit` — your own history arrives as context, with no command to remember |
 | 🧠 **learning loop** | per-turn signals collected into an inbox, consolidated into memory Claude actually loads |
 | 📖 **personal wiki** | one markdown page per topic, edited in place, Obsidian-compatible, same index |
 | 🌌 **3d memory map** | `cml map` renders your whole memory as an interactive galaxy — one offline HTML file |
@@ -112,13 +113,29 @@ Transcripts stay where Claude Code puts them. `cml` never moves or modifies them
 
 </details>
 
+## 🎯 recall — the read half
+
+Capture was hooked from the first commit. Retrieval never was, and that asymmetry is the whole story. Measured across 564 transcripts on the machine this was built on: the write side ran **625 times** (`index` 321, `capture` 304), the read side ran **20** — `cml search`, in 12 sessions, **2%**. The index was in good shape and almost nobody read it, because reading it was a decision the model had to remember to make, and a decision made 2% of the time is indistinguishable from a feature that does not exist.
+
+So `cml recall` runs on `UserPromptSubmit` and the model is not consulted. Every prompt queries the index; whatever clears the gates arrives as context before Claude answers.
+
+The gates are what keep it from becoming wallpaper, and they were tuned against the corpus rather than guessed:
+
+- **rarity** — a term appearing in more than 6% of the index is dropped before the query runs. Without it, *"do we have the same problem in all the code"* matched on `code` and `problem` and dragged in a row from an unrelated project. Firing rate before this gate existed: **76%** of real prompts. After: **28%**.
+- **substance** — fewer than two surviving terms means the prompt asks nothing. `yes`, `ok`, `do it` recall nothing.
+- **overlap** — a row sharing one word with your prompt is a coincidence. Two is a topic.
+- **echo** — a row that *is* your prompt, asked once before, tells Claude nothing that isn't already on screen. The answer to it might; the echo never does.
+- **novelty** — a row already injected this session is not injected again.
+
+Measured over 400 real prompts sampled from those transcripts: fires on **28%**, mean **2.1** hits, **~550 bytes** injected. One FTS5 query plus a KNN rerank — the whole hook, cold, is **18 ms**. Still no LLM call anywhere in it.
+
 ## 🔁 the learning loop
 
 A Stop hook appends your message from each turn to a per-project inbox file, flagged when it reads like a correction. At session start, once five or more signals accumulate, Claude gets a note telling it to distill them into its persistent memory and clear the inbox. The hooks contain no LLM calls. The distillation happens inside a session you were going to run anyway, where the full context already lives.
 
 That same SessionStart hook also briefs you on what's still open: chronic asks that keep recurring across sessions (the logic behind `cml loops`, capped to the top 3), and a menu of wiki topics on file so Claude knows what it can pull in before re-deriving something already written down. Both are skipped on `resume`/`compact` sources — re-injecting static context on every resume is exactly the bloat this is budgeted against — but the inbox nag above still fires there if it's due. The whole message reports its own size inline (`[context injected: N.NkB]`): measured 1.2kB on a fresh start on this repo's own index, 0.5kB on resume where only the nag can still trigger.
 
-A third hook, on `UserPromptSubmit`, classifies each prompt against a phrase table — correction, preference, decision, method, reference — and once per session per category, injects a one-line nudge to capture it (`cml hint`), e.g. *"reads like a durable preference — consider capturing it so future sessions inherit it."* It's a suggestion, never a write: the model still decides what's worth keeping. Still zero LLM calls anywhere in the loop, just SQL and string matching.
+A third hook, sharing `UserPromptSubmit` with recall above, classifies each prompt against a phrase table — correction, preference, decision, method, reference — and once per session per category, injects a one-line nudge to capture it (`cml hint`), e.g. *"reads like a durable preference — consider capturing it so future sessions inherit it."* It's a suggestion, never a write: the model still decides what's worth keeping. Still zero LLM calls anywhere in the loop, just SQL and string matching.
 
 ## 📖 the wiki
 
@@ -142,7 +159,7 @@ One static HTML file with the render engine vendored in. Works offline, no CDN, 
 
 ## 🛡️ when it breaks
 
-There is no worker process to die. `capture`, `nudge`, and `hint` exit 0 on every code path, including total failure, so a broken install degrades to "no memory" instead of "no Claude".
+There is no worker process to die. `capture`, `nudge`, `hint`, and `recall` exit 0 on every code path, including total failure, so a broken install degrades to "no memory" instead of "no Claude". When the binary itself is missing, the bootstrap still emits valid passthrough JSON for all four.
 
 > [!NOTE]
 > The index is disposable. Transcripts are the source of truth, and everything rebuilds from them in seconds:
@@ -164,6 +181,7 @@ claude-mem is the popular one, and it works for plenty of people. It also runs a
 | hook failure mode | ✅ exit 0, session unaffected | ❌ can block all prompts |
 | works on subscription plans | ✅ that's the point | ⚠️ author says hold off |
 | search | ✅ hybrid: FTS5 + local vectors | ✅ FTS5 + vector (Chroma) |
+| automatic retrieval | ✅ per-prompt, gated and measured | ✅ at session start, progressive disclosure |
 | vector stack | ✅ [sqlite-vec](https://github.com/asg017/sqlite-vec) in the same db file, 30 MB local model | ❌ Python + Chroma process |
 
 The vector gap is closed, and it stayed on-principle: embeddings come from a local [Model2Vec](https://github.com/MinishLab/model2vec-rs) static model (~30 MB, downloads once, then offline), vectors live in the same SQLite file via sqlite-vec, and search fuses BM25 with KNN using reciprocal rank fusion — with the vector leg gated behind the keyword one, so it reorders what BM25 found and can never introduce a row that matches nothing. Weighted equally it would: a row sharing not one word with the query once tied the top hit, because embedding short rows whole puts every project in every other project's neighbourhood. `--semantic` still searches by meaning alone. Run `cml embed` once to turn it on; after that the Stop hook embeds new rows incrementally. Still zero API calls, still no daemon, still one file you own.
@@ -194,6 +212,7 @@ Your memory already exists. It's the transcripts. Index them; don't make a human
 | `cml capture` | *(hook)* append turn's user message to the learning inbox |
 | `cml nudge` | *(hook)* SessionStart briefing: learning-inbox nag (always eligible), plus open loops and wiki topics (skipped on resume/compact) |
 | `cml hint` | *(hook)* UserPromptSubmit: phrase-table classifier nudges a capture, once per session per category |
+| `cml recall` | *(hook)* UserPromptSubmit: retrieves against the prompt and injects the top matches, gated on rarity, substance, overlap, echo and novelty |
 
 <kbd>CML_HOME</kbd> moves the data directory (default `~/.claude/claude-memory-light`). <kbd>CML_NUDGE_THRESHOLD</kbd> tunes the nudge, default 5. <kbd>CML_EMBED_MODEL</kbd> swaps the embedding model — `minishlab/potion-base-32M` for better recall, `minishlab/potion-multilingual-128M` for non-English corpora; run `cml embed --all` after switching.
 
@@ -259,6 +278,7 @@ About 11 MB for 50 sessions / 4,000 messages on my machine. SQLite FTS5 handles 
 - [x] session briefing — chronic open loops and a wiki topic menu folded into the SessionStart nudge, capped and size-metered
 - [x] `cml loops` — chronic-loop detection: asks that recur across sessions, surfaced from the index
 - [x] `cml hint` — UserPromptSubmit phrase-table classifier that nudges a capture, once per session per category
+- [x] `cml recall` — the read half hooked: every prompt retrieves against the index, so recall stops depending on the model remembering to search
 - [ ] optional end-of-session digests (batched, single call, opt-in)
 - [ ] windows support
 

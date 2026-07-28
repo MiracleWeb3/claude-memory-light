@@ -21,6 +21,6 @@ void suite_filters();    // noise, correction flag, paths, digest, squeeze
 void suite_embedding();  // tokenizer + vectors (skips without the model cache)
 void suite_curate();     // forget --match, judge request/verdicts
 void suite_map();        // wikilinks + map payload
-void suite_ports();      // 2.5.0: chronic loops + prompt hints
+void suite_ports();      // hook subcommands: chronic loops, prompt hints, recall gates
 
 }  // namespace cml_test

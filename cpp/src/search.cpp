@@ -18,6 +18,7 @@
 #include <vector>
 
 #include "db.hpp"
+#include "noise.hpp"
 #include "search.hpp"
 #include "utf8.hpp"
 #include "vec.hpp"
@@ -65,6 +66,57 @@ std::string pad(std::string s, std::size_t width) {
 
 }  // namespace
 
+std::vector<std::int64_t> rank_rowids(Db& db, const std::string& fts,
+                                      const std::string& semantic_query, int candidates,
+                                      std::string* semantic_error) {
+    // Keyword leg: FTS5 BM25.
+    std::vector<std::int64_t> hits;
+    if (!fts.empty()) {
+        Stmt s(db, "SELECT rowid FROM mem WHERE mem MATCH ?1 ORDER BY rank LIMIT ?2");
+        if (s) {
+            s.bind(1, fts).bind(2, candidates);
+            while (s.step()) hits.push_back(s.i64(0));
+        } else if (semantic_error) {
+            *semantic_error = db.error();
+        }
+    }
+
+    // Semantic leg: local embeddings + sqlite-vec KNN. Hybrid by default once
+    // `cml embed` has run; silent when the model or the vector table is absent.
+    std::vector<std::int64_t> vec_hits;
+    if (!semantic_query.empty()) {
+        std::string err;
+        vec_hits = semantic_hits(db, semantic_query, candidates, err);
+        if (vec_hits.empty() && semantic_error && semantic_error->empty()) *semantic_error = err;
+    }
+
+    // Reciprocal rank fusion across both legs.
+    std::unordered_map<std::int64_t, double> score;
+    for (std::size_t i = 0; i < hits.size(); ++i) {
+        score[hits[i]] += 1.0 / (kRrfK + static_cast<double>(i));
+    }
+    const bool gated = !fts.empty();  // nothing to gate against when only meaning was queried
+    for (std::size_t i = 0; i < vec_hits.size(); ++i) {
+        // Lexical gate: reorder rows the keyword leg already found, never add new ones.
+        if (gated && score.find(vec_hits[i]) == score.end()) continue;
+        score[vec_hits[i]] += 1.0 / (kRrfK + static_cast<double>(i));
+    }
+    // Deterministic order. The Rust original sorted a Vec built from a HashMap, whose
+    // iteration order Rust randomises per process — the same query on the same database
+    // returned three different orderings across five runs. Ties break on rowid so the
+    // result is reproducible, which matters when two binaries are being diffed.
+    std::vector<std::pair<std::int64_t, double>> ranked(score.begin(), score.end());
+    std::sort(ranked.begin(), ranked.end(), [](const auto& a, const auto& b) {
+        if (a.second != b.second) return a.second > b.second;
+        return a.first < b.first;
+    });
+
+    std::vector<std::int64_t> out;
+    out.reserve(ranked.size());
+    for (const auto& [rowid, _] : ranked) out.push_back(rowid);
+    return out;
+}
+
 int search(const std::vector<std::string>& args) {
     std::size_t limit = 12;
     std::string project, role;
@@ -102,56 +154,19 @@ int search(const std::vector<std::string>& args) {
         return 1;
     }
 
-    // Keyword leg: FTS5 BM25.
-    std::vector<std::int64_t> hits;
-    if (!semantic_only) {
-        Stmt s(db, "SELECT rowid FROM mem WHERE mem MATCH ?1 ORDER BY rank LIMIT ?2");
-        if (!s) {
-            std::fprintf(stderr, "cml: %s\n", db.error().c_str());
-            return 1;
-        }
-        s.bind(1, fts_query(terms)).bind(2, kCandidates);
-        while (s.step()) hits.push_back(s.i64(0));
+    std::string joined;
+    for (const auto& t : terms) {
+        if (!joined.empty()) joined += ' ';
+        joined += t;
     }
-
-    // Semantic leg: local embeddings + sqlite-vec KNN. Hybrid by default once
-    // `cml embed` has run; a hard failure only when --semantic was demanded.
-    std::vector<std::int64_t> vec_hits;
-    if (!keyword_only) {
-        std::string joined;
-        for (const auto& t : terms) {
-            if (!joined.empty()) joined += ' ';
-            joined += t;
-        }
-        std::string err;
-        vec_hits = semantic_hits(db, joined, kCandidates, err);
-        if (vec_hits.empty() && semantic_only) {
-            std::fprintf(stderr, "cml: %s\n", err.c_str());
-            return 1;
-        }
+    // `--semantic` refuses loudly rather than silently returning keyword hits.
+    std::string err;
+    const auto ranked = rank_rowids(db, semantic_only ? std::string{} : fts_query(terms),
+                                    keyword_only ? std::string{} : joined, kCandidates, &err);
+    if (ranked.empty() && semantic_only && !err.empty()) {
+        std::fprintf(stderr, "cml: %s\n", err.c_str());
+        return 1;
     }
-
-    // Reciprocal rank fusion across both legs.
-    std::unordered_map<std::int64_t, double> score;
-    for (std::size_t i = 0; i < hits.size(); ++i) {
-        score[hits[i]] += 1.0 / (kRrfK + static_cast<double>(i));
-    }
-    for (std::size_t i = 0; i < vec_hits.size(); ++i) {
-        // Lexical gate: reorder rows the keyword leg already found, never add new ones.
-        // `--semantic` skips the keyword leg entirely, so it still searches by meaning
-        // alone (score is empty there, and the gate is bypassed with it).
-        if (!semantic_only && score.find(vec_hits[i]) == score.end()) continue;
-        score[vec_hits[i]] += 1.0 / (kRrfK + static_cast<double>(i));
-    }
-    // Deterministic order. The Rust original sorted a Vec built from a HashMap, whose
-    // iteration order Rust randomises per process — the same query on the same database
-    // returned three different orderings across five runs. Ties break on rowid so the
-    // result is reproducible, which matters when two binaries are being diffed.
-    std::vector<std::pair<std::int64_t, double>> ranked(score.begin(), score.end());
-    std::sort(ranked.begin(), ranked.end(), [](const auto& a, const auto& b) {
-        if (a.second != b.second) return a.second > b.second;
-        return a.first < b.first;
-    });
 
     const auto gists = gist_lookup(db);
     Stmt fetch(db,
@@ -160,7 +175,7 @@ int search(const std::vector<std::string>& args) {
     const std::string want_project = lower(project);
 
     std::size_t printed = 0;
-    for (const auto& [rowid, _] : ranked) {
+    for (const std::int64_t rowid : ranked) {
         if (printed >= limit) break;
         fetch.reset();
         fetch.bind(1, rowid);
@@ -177,17 +192,9 @@ int search(const std::vector<std::string>& args) {
         if (!role.empty() && rrole != role) continue;
 
         const auto it = gists.find(stable_key(sess, ts, rrole, head));
-        std::string snip = (it != gists.end()) ? it->second : raw;
-
-        // collapse whitespace so a row stays one line
-        std::string flat;
-        bool gap = true;
-        for (const char c : snip) {
-            if (std::isspace(static_cast<unsigned char>(c))) { gap = true; continue; }
-            if (gap && !flat.empty()) flat.push_back(' ');
-            gap = false;
-            flat.push_back(c);
-        }
+        // squeeze keeps the row on one line; 170 is what the SELECT already clipped to,
+        // so nothing here re-clips.
+        const std::string flat = squeeze((it != gists.end()) ? it->second : raw, 170);
 
         const std::string date = (ts.size() >= 10) ? ts.substr(0, 10) : "no-date   ";
         std::printf("%s %s %s %s | %s\n", date.c_str(), pad(rrole, 9).c_str(),
@@ -196,13 +203,8 @@ int search(const std::vector<std::string>& args) {
     }
 
     if (printed == 0) {
-        std::string joined;
-        for (const auto& t : terms) {
-            if (!joined.empty()) joined += ' ';
-            joined += t;
-        }
         std::printf("no hits for: %s (%s)\n", joined.c_str(),
-                    vec_hits.empty() ? "keyword" : "hybrid");
+                    (keyword_only || !err.empty()) ? "keyword" : "hybrid");
     }
     return 0;
 }

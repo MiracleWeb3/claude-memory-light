@@ -58,6 +58,7 @@ add_library(cml_core STATIC
   src/curatorprompts.cpp
   src/loops.cpp
   src/hint.cpp
+  src/recall.cpp
   src/map.cpp
   src/mapbuild.cpp
   "${CMAKE_CURRENT_BINARY_DIR}/mapassets.S"

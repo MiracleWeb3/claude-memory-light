@@ -36,6 +36,6 @@ fi
 
 # Graceful degradation: never break the session.
 case "$1" in
-    nudge|hint) echo '{"continue":true}' ;;
+    nudge|hint|recall) echo '{"continue":true}' ;;
 esac
 exit 0

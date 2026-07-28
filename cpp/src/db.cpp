@@ -110,8 +110,8 @@ Db open_db() {
 
     // The FTS5 definition must never drift, tokenizer included — FTS5 stores the
     // tokenizer in the table definition, so a mismatch would rebuild the index.
-    // `hints` is additive (2.5.0, per-session prompt-hint dedupe); older binaries
-    // simply ignore it.
+    // `hints` (2.5.0, per-session prompt-hint dedupe) and `recalled` (2.6.0, per-session
+    // retrieval dedupe) are additive; older binaries simply ignore them.
     const bool ok = db.exec(
         "PRAGMA journal_mode=WAL;"
         "PRAGMA synchronous=NORMAL;"
@@ -120,6 +120,8 @@ Db open_db() {
         "CREATE TABLE IF NOT EXISTS distilled(key TEXT PRIMARY KEY, gist TEXT);"
         "CREATE TABLE IF NOT EXISTS hints(session TEXT, category TEXT,"
         "    PRIMARY KEY(session, category));"
+        "CREATE TABLE IF NOT EXISTS recalled(session TEXT, key TEXT,"
+        "    PRIMARY KEY(session, key));"
         "CREATE VIRTUAL TABLE IF NOT EXISTS mem USING fts5("
         "    text, role UNINDEXED, project UNINDEXED, session UNINDEXED,"
         "    ts UNINDEXED, file UNINDEXED, tokenize='porter unicode61');");
