@@ -146,6 +146,14 @@ Db open_db() {
         "    PRIMARY KEY(session, key));"
         "CREATE VIRTUAL TABLE IF NOT EXISTS mem USING fts5("
         "    text, asks, role UNINDEXED, project UNINDEXED, session UNINDEXED,"
+        "    ts UNINDEXED, file UNINDEXED, tokenize='porter unicode61');"
+        // The work — commands and their output — in its own FTS5 table, because BM25
+        // statistics are global to a table. Sharing one meant 29k stack traces moved the
+        // average document length and term frequencies, and conversation ranking got
+        // worse even with tool rows filtered out after the fact: recall@1 30 -> 25. Two
+        // populations, two tables, two sets of statistics, no interference.
+        "CREATE VIRTUAL TABLE IF NOT EXISTS work USING fts5("
+        "    text, role UNINDEXED, project UNINDEXED, session UNINDEXED,"
         "    ts UNINDEXED, file UNINDEXED, tokenize='porter unicode61');");
     if (!ok) return Db{};
     return db;

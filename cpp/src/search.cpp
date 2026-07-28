@@ -68,11 +68,13 @@ std::string pad(std::string s, std::size_t width) {
 
 std::vector<std::int64_t> rank_rowids(Db& db, const std::string& fts,
                                       const std::string& semantic_query, int candidates,
-                                      std::string* semantic_error, bool ungated) {
+                                      std::string* semantic_error, bool ungated, Lane lane) {
     // Keyword leg: FTS5 BM25.
     std::vector<std::int64_t> hits;
     if (!fts.empty()) {
-        Stmt s(db, "SELECT rowid FROM mem WHERE mem MATCH ?1 ORDER BY rank LIMIT ?2");
+        Stmt s(db, lane == Lane::Tools
+                       ? "SELECT rowid FROM work WHERE work MATCH ?1 ORDER BY rank LIMIT ?2"
+                       : "SELECT rowid FROM mem WHERE mem MATCH ?1 ORDER BY rank LIMIT ?2");
         if (s) {
             s.bind(1, fts).bind(2, candidates);
             while (s.step()) hits.push_back(s.i64(0));

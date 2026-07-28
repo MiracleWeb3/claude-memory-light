@@ -37,6 +37,7 @@ struct RetrieveOpts {
     bool with_vectors = false;
     bool text_only = false;
     bool ungated = false;  // only meaningful with with_vectors
+    bool tools = false;    // search the work (commands and their output) instead
 };
 
 std::vector<Hit> retrieve(Db& db, std::string_view prompt, std::string_view exclude_session,

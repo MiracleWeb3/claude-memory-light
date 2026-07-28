@@ -47,6 +47,69 @@ std::string sv_or(simdjson::dom::element v, const char* key, const std::string& 
     return fallback;
 }
 
+
+// The command that ran, and what it printed.
+//
+// Assistant text is the conversation ABOUT the work; this is the work. Measured on a
+// real transcript: 741 kB of assistant text kept, 2751 kB of tool traffic discarded —
+// 3.7x more, and it is the half holding what people actually search for months later.
+// "ModuleNotFoundError: No module named 'curl_cffi'" appears nowhere except here.
+//
+// Capped, because a file read can be a megabyte and a megabyte of source is not a
+// memory. The cap keeps the errno and the first lines of a stack trace, which is the
+// part that identifies the failure.
+constexpr std::size_t kToolMax = 1200;
+
+void append_capped(std::string& out, std::string_view s) {
+    if (out.size() >= kToolMax) return;
+    if (!out.empty()) out.push_back(' ');
+    out.append(s.substr(0, kToolMax - out.size()));
+}
+
+// Tool name plus its string arguments: the command, the path, the pattern. Non-string
+// arguments are skipped — a Write's `content` is the file, not a description of it.
+std::string tool_use_text(simdjson::dom::element content) {
+    simdjson::dom::array arr;
+    if (content.get(arr) != simdjson::SUCCESS) return {};
+    std::string out;
+    for (auto b : arr) {
+        std::string_view t;
+        if (b["type"].get(t) != simdjson::SUCCESS || t != "tool_use") continue;
+        std::string_view name;
+        if (b["name"].get(name) == simdjson::SUCCESS) append_capped(out, name);
+        simdjson::dom::object input;
+        if (b["input"].get(input) != simdjson::SUCCESS) continue;
+        for (auto field : input) {
+            std::string_view v;
+            if (field.value.get(v) == simdjson::SUCCESS) append_capped(out, v);
+        }
+    }
+    return out;
+}
+
+// What came back. `content` is either a plain string or an array of text blocks.
+std::string tool_result_text(simdjson::dom::element content) {
+    simdjson::dom::array arr;
+    if (content.get(arr) != simdjson::SUCCESS) return {};
+    std::string out;
+    for (auto b : arr) {
+        std::string_view t;
+        if (b["type"].get(t) != simdjson::SUCCESS || t != "tool_result") continue;
+        std::string_view s;
+        if (b["content"].get(s) == simdjson::SUCCESS) {
+            append_capped(out, s);
+            continue;
+        }
+        simdjson::dom::array inner;
+        if (b["content"].get(inner) != simdjson::SUCCESS) continue;
+        for (auto ib : inner) {
+            std::string_view is;
+            if (ib["text"].get(is) == simdjson::SUCCESS) append_capped(out, is);
+        }
+    }
+    return out;
+}
+
 }  // namespace
 
 std::vector<Entry> parse_transcript(const std::string& path,
@@ -86,12 +149,12 @@ std::vector<Entry> parse_transcript(const std::string& path,
 
         if (type == "assistant") {
             if (has_block(content, "tool_use")) {
-                entries.push_back({Entry::Kind::AssistantTool, "", "", ""});
+                entries.push_back({Entry::Kind::AssistantTool, tool_use_text(content), ts, sid});
             } else if (!blank(text)) {
                 entries.push_back({Entry::Kind::AssistantText, text, ts, sid});
             }
         } else if (has_block(content, "tool_result")) {
-            entries.push_back({Entry::Kind::UserTool, "", "", ""});
+            entries.push_back({Entry::Kind::UserTool, tool_result_text(content), ts, sid});
         } else if (!blank(text)) {
             entries.push_back({Entry::Kind::UserHuman, text, ts, sid});
         }

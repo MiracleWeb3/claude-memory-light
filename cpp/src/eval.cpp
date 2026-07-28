@@ -78,6 +78,8 @@ int eval(const std::vector<std::string>& args) {
             opts.text_only = true;
         } else if (args[i] == "--ungated") {
             opts.ungated = true;
+        } else if (args[i] == "--tools") {
+            opts.tools = true;
         }
     }
 

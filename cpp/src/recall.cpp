@@ -104,6 +104,10 @@ std::string lower(std::string_view s) {
 // Keep only terms rare enough to mean something. A term matching nothing is dropped
 // with them: it cannot rank, and it cannot count toward the overlap floor either.
 std::vector<std::string> discriminative(Db& db, const std::vector<std::string>& terms) {
+    // Counted over `mem` alone, which is conversation. The work lives in `work` and is
+    // deliberately not part of this ratio: a stack trace repeats an identifier hundreds
+    // of times, and when tool rows shared this table the ceiling moved so far that the
+    // gate fired on 99% of prompts instead of 50% — the wallpaper it exists to prevent.
     const std::int64_t total = db.scalar("SELECT count(*) FROM mem");
     if (total < kMinCorpus) return terms;  // a young index: let everything through
     const std::int64_t ceiling = std::max(kDfFloor, total * kDfPercent / 100);
@@ -185,7 +189,7 @@ std::vector<Hit> retrieve(Db& db, std::string_view prompt, std::string_view excl
     if (opts.text_only) fts = "{text} : (" + fts + ")";
     const auto ranked =
         rank_rowids(db, fts, opts.with_vectors ? joined : std::string{}, kCandidates,
-                    nullptr, opts.ungated);
+                    nullptr, opts.ungated, opts.tools ? Lane::Tools : Lane::Conversation);
     if (ranked.empty()) return out;
 
     const auto gists = gist_lookup(db);

@@ -62,6 +62,11 @@ void upsert_file(Db& db, const std::string& path, const FileMeta& fm) {
 }
 
 void drop_rows_for_file(Db& db, const std::string& path) {
+    {
+        Stmt w(db, "DELETE FROM work WHERE file = ?1");
+        w.bind(1, path);
+        w.run();
+    }
     // vec_mem only exists once `cml embed` has run; failing here is normal.
     Stmt v(db, "DELETE FROM vec_mem WHERE rowid IN (SELECT rowid FROM mem WHERE file=?1)");
     if (v) {
@@ -136,6 +141,9 @@ Counts index_transcripts(Db& db, bool force) {
             Stmt ins(db,
                      "INSERT INTO mem(text, role, project, session, ts, file) "
                      "VALUES(?1,?2,?3,?4,?5,?6)");
+            Stmt wins(db,
+                      "INSERT INTO work(text, role, project, session, ts, file) "
+                      "VALUES(?1,?2,?3,?4,?5,?6)");
             std::size_t n = 0;
             for (std::size_t i = 0; i < entries.size(); ++i) {
                 const Entry& e = entries[i];
@@ -147,6 +155,17 @@ Counts index_transcripts(Db& db, bool force) {
                         if (!turn_final(entries, i)) continue;
                         role = "assistant";
                         break;
+                    // The work itself: commands and their output. Short results are
+                    // acknowledgements ("OK", "1 file changed") and carry no search
+                    // surface, so they are dropped the way empty text is.
+                    case Entry::Kind::AssistantTool:
+                    case Entry::Kind::UserTool:
+                        if (e.text.size() < 40) continue;
+                        wins.reset();
+                        wins.bind(1, e.text).bind(2, "tool").bind(3, project)
+                            .bind(4, e.session).bind(5, e.ts).bind(6, pstr);
+                        if (wins.run()) ++total.rows;
+                        continue;
                     default: continue;
                 }
                 const std::string& text = e.text;

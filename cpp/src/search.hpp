@@ -12,10 +12,17 @@ namespace cml {
 // reciprocal rank fusion. Either leg is skipped by passing an empty string for it.
 // The vector leg RERANKS what the keyword leg found and may never add rows of its
 // own — see search.cpp for the measurement that forced that gate.
+// `lane` picks which half of the index is searched. Conversation rows and tool rows
+// cannot share one ranked list: measured, mixing them took recall@3 from 14.8% to 5.2%,
+// because a stack trace repeats an identifier hundreds of times and buries the one
+// sentence that answered the question.
+enum class Lane { Conversation, Tools };
+
 std::vector<std::int64_t> rank_rowids(Db& db, const std::string& fts,
                                       const std::string& semantic_query, int candidates,
                                       std::string* semantic_error = nullptr,
-                                      bool ungated = false);
+                                      bool ungated = false,
+                                      Lane lane = Lane::Conversation);
 
 // Keyword search over the FTS5 index. Returns a process exit code.
 int search(const std::vector<std::string>& args);
