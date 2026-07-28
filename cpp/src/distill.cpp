@@ -153,14 +153,23 @@ std::pair<std::size_t, std::size_t> distill_new(Db& db, const std::string& key,
                 ro = row.text(2);
                 h = row.text(3);
             }
+            // A "drop" verdict demotes, it does not delete. Measured: deleting them
+            // cost recall@3 19.7% -> 14.6%, and destroyed 547 of 821 question/answer
+            // pairs outright — two thirds of the history had no answer left to find.
+            // The curator is good at judging what deserves a permanent gist and has no
+            // business deciding what still exists, because it judges a row before the
+            // question that needs it has been asked. Recorded either way so the row is
+            // not re-judged every run; `cml forget` remains the deliberate, manual
+            // delete.
+            const auto d = durable.find(id);
+            Stmt ins(db, "INSERT OR REPLACE INTO distilled(key, gist) VALUES (?1, ?2)");
+            ins.bind(1, stable_key(s, t, ro, h))
+               .bind(2, (keep && d != durable.end()) ? d->second : "");
+            ins.run();
             if (keep) {
-                const auto d = durable.find(id);
-                Stmt ins(db, "INSERT OR REPLACE INTO distilled(key, gist) VALUES (?1, ?2)");
-                ins.bind(1, stable_key(s, t, ro, h)).bind(2, d == durable.end() ? "" : d->second);
-                ins.run();
                 ++kept;
                 if (d != durable.end()) ++minted;
-            } else if (purge_rowid(db, id)) {
+            } else {
                 ++dropped;
             }
         }
