@@ -31,6 +31,7 @@ struct Hit {
 struct RetrieveOpts {
     bool keyword_only = false;
     bool text_only = false;
+    bool ungated = false;  // let the embedding leg add candidates, not just reorder
 };
 
 std::vector<Hit> retrieve(Db& db, std::string_view prompt, std::string_view exclude_session,

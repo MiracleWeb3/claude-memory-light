@@ -177,7 +177,8 @@ std::vector<Hit> retrieve(Db& db, std::string_view prompt, std::string_view excl
     std::string fts = or_query(terms);
     if (opts.text_only) fts = "{text} : (" + fts + ")";
     const auto ranked =
-        rank_rowids(db, fts, opts.keyword_only ? std::string{} : joined, kCandidates);
+        rank_rowids(db, fts, opts.keyword_only ? std::string{} : joined, kCandidates,
+                    nullptr, opts.ungated);
     if (ranked.empty()) return out;
 
     const auto gists = gist_lookup(db);

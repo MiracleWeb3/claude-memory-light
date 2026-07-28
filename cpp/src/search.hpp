@@ -14,7 +14,8 @@ namespace cml {
 // own — see search.cpp for the measurement that forced that gate.
 std::vector<std::int64_t> rank_rowids(Db& db, const std::string& fts,
                                       const std::string& semantic_query, int candidates,
-                                      std::string* semantic_error = nullptr);
+                                      std::string* semantic_error = nullptr,
+                                      bool ungated = false);
 
 // Keyword search over the FTS5 index. Returns a process exit code.
 int search(const std::vector<std::string>& args);

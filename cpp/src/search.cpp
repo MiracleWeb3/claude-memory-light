@@ -68,7 +68,7 @@ std::string pad(std::string s, std::size_t width) {
 
 std::vector<std::int64_t> rank_rowids(Db& db, const std::string& fts,
                                       const std::string& semantic_query, int candidates,
-                                      std::string* semantic_error) {
+                                      std::string* semantic_error, bool ungated) {
     // Keyword leg: FTS5 BM25.
     std::vector<std::int64_t> hits;
     if (!fts.empty()) {
@@ -95,7 +95,10 @@ std::vector<std::int64_t> rank_rowids(Db& db, const std::string& fts,
     for (std::size_t i = 0; i < hits.size(); ++i) {
         score[hits[i]] += 1.0 / (kRrfK + static_cast<double>(i));
     }
-    const bool gated = !fts.empty();  // nothing to gate against when only meaning was queried
+    // ungated lets the embedding leg ADD rows BM25 never found, instead of only
+    // reordering the ones it did. That is the configuration the gate was written to
+    // forbid, back when the embeddings were static and added noise.
+    const bool gated = !fts.empty() && !ungated;
     for (std::size_t i = 0; i < vec_hits.size(); ++i) {
         // Lexical gate: reorder rows the keyword leg already found, never add new ones.
         if (gated && score.find(vec_hits[i]) == score.end()) continue;

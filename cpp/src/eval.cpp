@@ -76,6 +76,8 @@ int eval(const std::vector<std::string>& args) {
             opts.keyword_only = true;
         } else if (args[i] == "--no-asks") {
             opts.text_only = true;
+        } else if (args[i] == "--ungated") {
+            opts.ungated = true;
         }
     }
 
