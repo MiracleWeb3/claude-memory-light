@@ -22,5 +22,6 @@ void suite_embedding();  // tokenizer + vectors (skips without the model cache)
 void suite_curate();     // forget --match, judge request/verdicts
 void suite_map();        // wikilinks + map payload
 void suite_ports();      // hook subcommands: chronic loops, prompt hints, recall gates
+void suite_encoder();    // transformer kernels; semantic checks skip without the model
 
 }  // namespace cml_test

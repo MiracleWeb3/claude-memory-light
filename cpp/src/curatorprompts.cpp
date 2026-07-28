@@ -50,7 +50,9 @@ When unsure, gist:"". Two hundred hard-won facts are worth more than nine hundre
 EVERY row in this batch already passed the keep filter. That tells you NOTHING about durability — most kept rows are not durable, and a batch where most rows get a gist is a batch you have judged wrong.
 BUDGET: across a batch of 20 rows expect roughly 2 to 4 gists. Five or more means your bar has slipped; re-read the three tests and raise it.
 For a durable row the gist is its reusable essence in at most 120 characters.
-Reply ONLY with JSON, keep always true, gist "" for every row that is not durable: {"verdicts":[{"id":<id>,"keep":true,"gist":""}]})CML";
+
+SEPARATELY, and for EVERY row whether or not it earns a gist, write `asks`: 3 to 5 short questions or phrasings the developer might type months from now when they want this row back. Two rules. Use THEIR words, not the row's — the entire point is to bridge vocabulary the row does not contain, so copying its sentences is worthless. And describe the SYMPTOM or the goal, not the solution, because that is what someone types before they know the answer. A row about "tap-drag lock lives in the xfconf pointers channel" should carry asks like "trackpad keeps selecting after I lift my finger", "how do I stop double-tap dragging on linux", "text highlights on its own when I move the cursor". For a row that is pure status or noise, asks:[].
+Reply ONLY with JSON, keep always true, gist "" for every row that is not durable: {"verdicts":[{"id":<id>,"keep":true,"gist":"","asks":["...","..."]}]})CML";
 
 constexpr const char* kKeepReply =
     "Reply ONLY with JSON: {\"verdicts\":[{\"id\":<id>,\"keep\":true|false,\"gist\":\"\"}]}"

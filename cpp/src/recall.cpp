@@ -154,6 +154,55 @@ std::size_t term_overlap(std::string_view text, const std::vector<std::string>& 
     return n;
 }
 
+std::vector<Hit> retrieve(Db& db, std::string_view prompt, std::string_view exclude_session,
+                          std::size_t limit) {
+    std::vector<Hit> out;
+    // A slash-command envelope or a hook injection is not a question to the index.
+    if (is_noise(prompt)) return out;
+
+    const auto words = content_terms(prompt);
+    if (words.size() < kMinTerms) return out;
+    const auto terms = discriminative(db, words);
+    if (terms.size() < kMinTerms) return out;
+
+    const std::string prompt_flat = squeeze(lower(prompt), 400);
+    std::string joined;
+    for (const auto& t : terms) {
+        if (!joined.empty()) joined += ' ';
+        joined += t;
+    }
+    const auto ranked = rank_rowids(db, or_query(terms), joined, kCandidates);
+    if (ranked.empty()) return out;
+
+    const auto gists = gist_lookup(db);
+    Stmt fetch(db,
+               "SELECT ts, role, project, session, substr(text,1,400), substr(text,1,64) "
+               "FROM mem WHERE rowid=?1");
+    if (!fetch) return out;
+
+    for (const std::int64_t rowid : ranked) {
+        if (out.size() >= limit) break;
+        fetch.reset();
+        fetch.bind(1, rowid);
+        if (!fetch.step()) continue;
+
+        const std::string ts = fetch.text(0), role = fetch.text(1), proj = fetch.text(2);
+        const std::string sess = fetch.text(3), text = fetch.text(4), head = fetch.text(5);
+
+        if (!exclude_session.empty() && sess == exclude_session) continue;
+        if (term_overlap(text, terms) < kMinOverlap) continue;
+        if (echoes(text, prompt_flat)) continue;
+
+        const std::string key = stable_key(sess, ts, role, head);
+        const auto it = gists.find(key);
+        const std::string date = (ts.size() >= 10) ? ts.substr(0, 10) : "no-date";
+        out.push_back({rowid, date + " " + role + (proj.empty() ? "" : "/" + proj) + ": " +
+                                  squeeze((it != gists.end()) ? it->second : text, kSnippet),
+                       key});
+    }
+    return out;
+}
+
 void recall() {
     // Whatever happens, the prompt must go through.
     const auto passthrough = []() { std::printf("{\"continue\": true}\n"); };
@@ -170,60 +219,24 @@ void recall() {
     if (data["prompt"].get(prompt) != simdjson::SUCCESS || prompt.empty()) return passthrough();
     if (data["session_id"].get(session) != simdjson::SUCCESS) session = {};
 
-    // A slash-command envelope or a hook injection is not a question to the index.
-    if (is_noise(prompt)) return passthrough();
-
-    const auto words = content_terms(prompt);
-    if (words.size() < kMinTerms) return passthrough();
-
     Db db = open_db();
     if (!db) return passthrough();
 
-    const auto terms = discriminative(db, words);
-    if (terms.size() < kMinTerms) return passthrough();
+    // Over-fetch: rows already injected this session are skipped below, and the next
+    // fresh one should take the freed slot rather than leaving the briefing short.
+    const auto hits = retrieve(db, prompt, session, kMaxHits * 4);
+    if (hits.empty()) return passthrough();
 
-    const std::string prompt_flat = squeeze(lower(prompt), 400);
-    std::string joined;
-    for (const auto& t : terms) {
-        if (!joined.empty()) joined += ' ';
-        joined += t;
-    }
-    const auto ranked = rank_rowids(db, or_query(terms), joined, kCandidates);
-    if (ranked.empty()) return passthrough();
-
-    const auto gists = gist_lookup(db);
-    Stmt fetch(db,
-               "SELECT ts, role, project, session, substr(text,1,400), substr(text,1,64) "
-               "FROM mem WHERE rowid=?1");
-    if (!fetch) return passthrough();
     Stmt mark(db, "INSERT OR IGNORE INTO recalled(session, key) VALUES(?1, ?2)");
-
     std::vector<std::string> lines;
-    for (const std::int64_t rowid : ranked) {
+    for (const auto& h : hits) {
         if (lines.size() >= kMaxHits) break;
-        fetch.reset();
-        fetch.bind(1, rowid);
-        if (!fetch.step()) continue;
-
-        const std::string ts = fetch.text(0), role = fetch.text(1), proj = fetch.text(2);
-        const std::string sess = fetch.text(3), text = fetch.text(4), head = fetch.text(5);
-
-        // Rows from this very session are already in the context window above.
-        if (!session.empty() && sess == session) continue;
-        if (term_overlap(text, terms) < kMinOverlap) continue;
-        if (echoes(text, prompt_flat)) continue;
-
-        const std::string key = stable_key(sess, ts, role, head);
         if (!session.empty() && mark) {
             mark.reset();
-            mark.bind(1, session).bind(2, key);
+            mark.bind(1, session).bind(2, h.key);
             if (!mark.run() || sqlite3_changes(db.raw()) == 0) continue;  // already injected
         }
-
-        const auto it = gists.find(key);
-        const std::string date = (ts.size() >= 10) ? ts.substr(0, 10) : "no-date";
-        lines.push_back(date + " " + role + (proj.empty() ? "" : "/" + proj) + ": " +
-                        squeeze((it != gists.end()) ? it->second : text, kSnippet));
+        lines.push_back(h.line);
     }
     if (lines.empty()) return passthrough();
 

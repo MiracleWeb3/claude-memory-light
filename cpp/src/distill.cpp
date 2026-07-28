@@ -127,6 +127,13 @@ std::pair<std::size_t, std::size_t> distill_new(Db& db, const std::string& key,
                 if (const auto dv = judge_batch(key, survivors, derr, Rubric::Durability)) {
                     for (const auto& d : *dv) {
                         if (!d.gist.empty()) durable.emplace(d.id, d.gist);
+                        // Expansions land straight on the row: they are search surface,
+                        // not a verdict, so they are stored where FTS5 will index them.
+                        if (!d.asks.empty()) {
+                            Stmt up(db, "UPDATE mem SET asks=?1 WHERE rowid=?2");
+                            up.bind(1, d.asks).bind(2, d.id);
+                            up.run();
+                        }
                     }
                 } else if (verbose) {
                     std::fprintf(stderr, "  durability pass skipped (%s) — rows kept gistless\n",
@@ -135,7 +142,7 @@ std::pair<std::size_t, std::size_t> distill_new(Db& db, const std::string& key,
             }
         }
 
-        for (const auto& [id, keep, gist] : *verdicts) {
+        for (const auto& [id, keep, gist, asks] : *verdicts) {
             std::string s, t, ro, h;
             {
                 Stmt row(db, "SELECT session, ts, role, substr(text,1,64) FROM mem WHERE rowid=?1");

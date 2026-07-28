@@ -1,5 +1,7 @@
 #include "distillwire.hpp"
 
+#include <fcntl.h>
+#include <sys/stat.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -58,11 +60,37 @@ std::optional<std::vector<Verdict>> judge_batch(
     const auto [url, model] = llm_conf();
     const auto tmp = data_dir() / ".distill-req.json";
     { std::ofstream(tmp, std::ios::binary) << build_judge_request(model, rows, rubric); }
-    std::string out = run_capture({"curl", "-s", "--max-time", "90", "-H",
-                                   "Content-Type: application/json", "-H",
-                                   "Authorization: Bearer " + key, "-d",
+
+    // The key goes in a --config file, never in argv. /proc/<pid>/cmdline is world
+    // readable on Linux, so passing it as `-H "Authorization: Bearer sk-..."` published
+    // the user's key to every process on the machine for the life of the request — it
+    // was plainly visible in `ps` output. The file is created 0600 before anything is
+    // written to it, so there is no window where it exists with looser permissions.
+    const auto cfg = data_dir() / ".distill-auth";
+    {
+        std::error_code ec;
+        std::filesystem::remove(cfg, ec);
+        const int fd = ::open(cfg.c_str(), O_WRONLY | O_CREAT | O_EXCL, S_IRUSR | S_IWUSR);
+        if (fd < 0) {
+            err = "cannot create a private file for the API key";
+            std::filesystem::remove(tmp, ec);
+            return std::nullopt;
+        }
+        const std::string line = "header = \"Authorization: Bearer " + key + "\"\n";
+        const bool wrote = ::write(fd, line.data(), line.size()) == static_cast<ssize_t>(line.size());
+        ::close(fd);
+        if (!wrote) {
+            err = "cannot write the API key config";
+            std::filesystem::remove(cfg, ec);
+            std::filesystem::remove(tmp, ec);
+            return std::nullopt;
+        }
+    }
+    std::string out = run_capture({"curl", "-s", "--max-time", "90", "--config",
+                                   cfg.string(), "-H", "Content-Type: application/json", "-d",
                                    "@" + tmp.string(), url});
     std::error_code ec;
+    std::filesystem::remove(cfg, ec);
     std::filesystem::remove(tmp, ec);
     return parse_verdicts(out, err);
 }
@@ -126,7 +154,19 @@ std::optional<std::vector<Verdict>> parse_verdicts(std::string& response, std::s
             if (v["keep"].get(keep) != simdjson::SUCCESS) continue;
             std::string_view gist;
             if (v["gist"].get(gist) != simdjson::SUCCESS) gist = "";
-            verdicts.push_back({id, keep, std::string(gist)});
+            // asks[] is flattened to one space-joined string: it goes into a single FTS5
+            // column, where the separation between phrasings carries no meaning anyway.
+            std::string asks;
+            simdjson::dom::array arr;
+            if (v["asks"].get(arr) == simdjson::SUCCESS) {
+                for (const auto a : arr) {
+                    std::string_view one;
+                    if (a.get(one) != simdjson::SUCCESS || one.empty()) continue;
+                    if (!asks.empty()) asks += ' ';
+                    asks.append(one);
+                }
+            }
+            verdicts.push_back({id, keep, std::string(gist), std::move(asks)});
         }
     }
     return verdicts;

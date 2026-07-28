@@ -7,6 +7,7 @@
 #include <cstdio>
 
 #include "embed.hpp"
+#include "embedder.hpp"
 
 extern "C" int sqlite3_vec_init(sqlite3* db, char** pzErrMsg,
                                 const sqlite3_api_routines* pApi);
@@ -30,8 +31,22 @@ void register_vec_extension() {
 
 namespace {
 
+// The width vec_mem was built at, 0 when it does not exist. Switching backends changes
+// the vector size, and vec0 would either reject every insert or silently compare
+// vectors from two different models — so the mismatch has to be caught, not survived.
+std::size_t stored_dim(Db& db) {
+    std::string sql;
+    {
+        Stmt s(db, "SELECT sql FROM sqlite_master WHERE name='vec_mem'");
+        if (s.step()) sql = s.text(0);
+    }
+    const auto a = sql.find('['), b = sql.find(']');
+    if (a == std::string::npos || b == std::string::npos || b < a) return 0;
+    return static_cast<std::size_t>(std::strtoul(sql.substr(a + 1, b - a - 1).c_str(), nullptr, 10));
+}
+
 // Shared by `cml embed` and the incremental pass inside `cml index`.
-std::size_t embed_pending(Db& db, const StaticModel& model) {
+std::size_t embed_pending(Db& db, const Embedder& model) {
     std::vector<std::pair<std::int64_t, std::string>> pending;
     {
         Stmt s(db,
@@ -66,8 +81,9 @@ std::size_t embed_new(Db& db) {
     // and it must never load a model for someone who never ran `cml embed`.
     if (!vec_table_exists(db)) return 0;
     std::string error;
-    const StaticModel model = StaticModel::load(embed_model_id(), error);
+    const Embedder model = Embedder::load(error);
     if (!model.ok()) return 0;  // silent: a hook must not break the session
+    if (stored_dim(db) != model.dim()) return 0;  // `cml embed --all` rebuilds it
     return embed_pending(db, model);
 }
 
@@ -80,15 +96,22 @@ int embed_cmd(const std::vector<std::string>& args) {
         std::fprintf(stderr, "cml: cannot open index\n");
         return 1;
     }
-    if (all && vec_table_exists(db)) db.exec("DROP TABLE vec_mem;");
-
     std::string error;
-    const std::string id = embed_model_id();
-    const StaticModel model = StaticModel::load(id, error);
+    const Embedder model = Embedder::load(error);
     if (!model.ok()) {
         std::fprintf(stderr, "cml: %s\n", error.c_str());
         return 1;
     }
+    const std::string id = model.id();
+
+    // A width change is a different model: the old vectors are not comparable to the
+    // new ones and rebuilding is the only correct answer, asked for or not.
+    const std::size_t have = stored_dim(db);
+    const bool width_changed = have != 0 && have != model.dim();
+    if (width_changed)
+        std::printf("vector width changed %zu -> %zu (%s) — rebuilding\n", have, model.dim(),
+                    id.c_str());
+    if ((all || width_changed) && vec_table_exists(db)) db.exec("DROP TABLE vec_mem;");
 
     const std::string create = "CREATE VIRTUAL TABLE IF NOT EXISTS vec_mem USING vec0("
                                "embedding float[" + std::to_string(model.dim()) + "]);";
@@ -114,8 +137,12 @@ std::vector<std::int64_t> semantic_hits(Db& db, const std::string& query, int k,
         error = "semantic index missing — run `cml embed` once to build it";
         return out;
     }
-    const StaticModel model = StaticModel::load(embed_model_id(), error);
+    const Embedder model = Embedder::load(error);
     if (!model.ok()) return out;
+    if (stored_dim(db) != model.dim()) {
+        error = "vectors were built by a different model — run `cml embed --all`";
+        return out;
+    }
 
     const std::vector<float> q = model.encode(query);
     Stmt s(db, "SELECT rowid FROM vec_mem WHERE embedding MATCH ?1 AND k = ?2 ORDER BY distance");

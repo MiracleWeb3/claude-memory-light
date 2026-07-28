@@ -108,6 +108,28 @@ Db open_db() {
     Db db((dir / "index.db").string());
     if (!db) return db;
 
+    // 2.8.0 gave `mem` a second indexed column, `asks` — the doc2query expansions the
+    // curator writes. FTS5 stores its column list inside the table definition, so an
+    // existing index cannot grow one: it is dropped and rebuilt from the transcripts,
+    // which are the source of truth anyway. `files` is cleared with it or the indexer
+    // would consider every transcript already read and refill nothing.
+    //
+    // The read is scoped shut before the drop on purpose: SQLite refuses to DROP a table
+    // while a statement reading sqlite_master is still live, and db.exec reports that
+    // only through a return value. Holding the Stmt open across the exec made this
+    // migration fail silently — the schema simply stayed old.
+    std::string mem_sql;
+    {
+        Stmt s(db, "SELECT sql FROM sqlite_master WHERE type='table' AND name='mem'");
+        if (s.step()) mem_sql = s.text(0);
+    }
+    if (!mem_sql.empty() && mem_sql.find(" asks,") == std::string::npos) {
+        // vec_mem keys vectors by mem.rowid, and a rebuild renumbers every row, so
+        // keeping the old vectors would point each embedding at a different message.
+        // Dropping them costs one `cml embed` pass; keeping them corrupts search.
+        if (!db.exec("DROP TABLE mem;DELETE FROM files;DELETE FROM vec_mem;")) return Db{};
+    }
+
     // The FTS5 definition must never drift, tokenizer included — FTS5 stores the
     // tokenizer in the table definition, so a mismatch would rebuild the index.
     // `hints` (2.5.0, per-session prompt-hint dedupe) and `recalled` (2.6.0, per-session
@@ -123,7 +145,7 @@ Db open_db() {
         "CREATE TABLE IF NOT EXISTS recalled(session TEXT, key TEXT,"
         "    PRIMARY KEY(session, key));"
         "CREATE VIRTUAL TABLE IF NOT EXISTS mem USING fts5("
-        "    text, role UNINDEXED, project UNINDEXED, session UNINDEXED,"
+        "    text, asks, role UNINDEXED, project UNINDEXED, session UNINDEXED,"
         "    ts UNINDEXED, file UNINDEXED, tokenize='porter unicode61');");
     if (!ok) return Db{};
     return db;

@@ -34,7 +34,7 @@ int usage() {
         "     [--semantic|--keyword] | forget <rowid...> | forget --match \"<q>\" [--yes]\n"
         "     | distill [--all] | embed [--all] | map [--limit N] [--no-open] [--raw]\n"
         "     | loops [--days N] [--limit K] | stats | doctor | capture | nudge | hint\n"
-        "     | recall\n");
+        "     | recall | eval [-k N] [--limit N]\n");
     return 0;
 }
 
@@ -77,6 +77,7 @@ int main(int argc, char** argv) {
     if (cmd == "distill") return cml::distill(rest);
     if (cmd == "map") return cml::map(rest);
     if (cmd == "loops") return cml::loops(rest);
+    if (cmd == "eval") return cml::eval(rest);
 
     if (!cmd.empty() && cmd != "help" && cmd != "--help" && cmd != "-h") {
         std::fprintf(stderr, "cml: unknown or unported command '%.*s'\n",

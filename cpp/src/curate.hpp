@@ -43,6 +43,10 @@ struct Verdict {
     std::int64_t id = 0;
     bool keep = false;
     std::string gist;
+    // doc2query expansions: how someone would ASK for this row months later, in words
+    // the row itself does not contain. Indexed alongside the text so keyword search
+    // stops depending on the user remembering the vocabulary they used at the time.
+    std::string asks;
 };
 
 // The two halves of a judging round that touch no network and no disk, split out

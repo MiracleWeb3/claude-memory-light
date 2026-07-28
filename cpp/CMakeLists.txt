@@ -60,6 +60,13 @@ add_library(cml_core STATIC
   src/loops.cpp
   src/hint.cpp
   src/recall.cpp
+  src/eval.cpp
+  src/encoder/safetensors.cpp
+  src/encoder/kernels.cpp
+  src/encoder/layer.cpp
+  src/encoder/encoder.cpp
+  src/encoder/hfcache.cpp
+  src/embedder.cpp
   src/map.cpp
   src/mapbuild.cpp
   "${CMAKE_CURRENT_BINARY_DIR}/mapassets.S"
@@ -79,6 +86,7 @@ add_executable(cml_selftest
   src/selftest/curate.cpp
   src/selftest/map.cpp
   src/selftest/ports.cpp
+  src/selftest/encoder.cpp
 )
 target_link_libraries(cml_selftest PRIVATE cml_core)
 enable_testing()
