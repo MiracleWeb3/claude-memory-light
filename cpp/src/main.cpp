@@ -18,6 +18,7 @@
 #include "indexer.hpp"
 #include "loops.hpp"
 #include "map.hpp"
+#include "offload.hpp"
 #include "recall.hpp"
 #include "search.hpp"
 #include "state.hpp"
@@ -34,7 +35,7 @@ int usage() {
         "cml: index [--all] | search <terms> [--project P] [--role R] [--limit N]\n"
         "     [--semantic|--keyword] | forget <rowid...> | forget --match \"<q>\" [--yes]\n"
         "     | distill [--all] [--limit N] | embed [--all] | map [--limit N] [--no-open] [--raw]\n"
-        "     | loops [--days N] [--limit K] | stats | doctor | capture | nudge | hint\n"
+        "     | loops [--days N] [--limit K] | stats | doctor | capture | nudge | hint | offload\n"
         "     | recall | eval [-k N] [--limit N] | state [--project P] | version\n");
     return 0;
 }
@@ -73,6 +74,10 @@ int main(int argc, char** argv) {
     }
     if (cmd == "recall") {
         cml::recall();
+        return 0;
+    }
+    if (cmd == "offload") {
+        cml::offload();
         return 0;
     }
 

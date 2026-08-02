@@ -91,6 +91,7 @@ add_library(cml_core STATIC
   src/hint.cpp
   src/recall.cpp
   src/offload.cpp
+  src/offload/hook.cpp
   src/eval.cpp
   src/state.cpp
   src/encoder/safetensors.cpp
@@ -145,7 +146,10 @@ add_executable(cml_selftest
   src/selftest/encoder.cpp
   src/selftest/encodermodel.cpp
   src/selftest/offload.cpp
+  src/selftest/offloadhook.cpp
 )
+# The hook suite drives the real binary, so it needs one to exist beside it.
+add_dependencies(cml_selftest cml)
 target_link_libraries(cml_selftest PRIVATE cml_core)
 enable_testing()
 add_test(NAME selftest COMMAND cml_selftest)
