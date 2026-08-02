@@ -2,12 +2,14 @@
 // first that must not open the REAL one: every case here points $CML_HOME at a temp dir
 // before calling open_db(), because data_dir() reads that variable on every call
 // (paths.cpp:14-19). A suite that skipped it would rewrite the user's own memory index.
+#include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <string>
 
 #include "db.hpp"
 #include "harness.hpp"
+#include "scenes.hpp"
 
 namespace cml_test {
 namespace {
@@ -67,11 +69,76 @@ void test_scene_indexes_prose_and_not_metadata() {
     std::filesystem::remove_all(tmp);
 }
 
+// The digest defect that hides. A prefix cap does not fail loudly — it produces a
+// fluent, confident summary of a session's first 9%, and then answers "how did this turn
+// out?" from material that predates the answer. 27 of 76 real sessions exceed the cap,
+// and they are the long ones a scene is most for.
+void test_digest_keeps_the_ending_not_a_prefix() {
+    const auto tmp = sandbox();
+    std::filesystem::remove_all(tmp);
+    std::filesystem::create_directories(tmp);
+    setenv("CML_HOME", tmp.c_str(), 1);
+    {
+        cml::Db db = cml::open_db();
+        // 60 turns of 300 chars is ~18 KB against a 6 KB cap — comfortably past it, and
+        // roughly the p90 session on the real corpus.
+        for (int i = 0; i < 60; ++i) {
+            char ts[32];
+            std::snprintf(ts, sizeof ts, "2026-01-01T00:%02d:00", i);
+            const std::string body = (i == 0 ? std::string("OPENINGTURN ")
+                                     : i == 59 ? std::string("CLOSINGTURN ")
+                                               : std::string("middle "));
+            cml::Stmt ins(db, "INSERT INTO mem(text,asks,role,project,session,ts,file)"
+                              " VALUES(?1,'','user','p','s',?2,'f')");
+            ins.bind(1, body + std::string(300, 'x')).bind(2, ts);
+            ok(ins.run(), "turn written");
+        }
+        const std::string d = cml::session_digest(db, "s", {});
+        ok(d.find("OPENINGTURN") != std::string::npos, "the opening survives the cap");
+        ok(d.find("CLOSINGTURN") != std::string::npos,
+           "and so does the ENDING — the half that decides the outcome");
+        ok(d.find("turns omitted") != std::string::npos, "the cut is declared, not hidden");
+        ok(d.size() < 9000, "and the digest really is bounded");
+    }
+    unsetenv("CML_HOME");
+    std::filesystem::remove_all(tmp);
+}
+
+// Under the cap nothing is cut. The elision marker is driven by a `tail` sentinel, and
+// the reading where "no rows were dropped" and "drop everything after row two" share a
+// value is exactly the bug this pins.
+void test_short_session_is_not_elided() {
+    const auto tmp = sandbox();
+    std::filesystem::remove_all(tmp);
+    std::filesystem::create_directories(tmp);
+    setenv("CML_HOME", tmp.c_str(), 1);
+    {
+        cml::Db db = cml::open_db();
+        for (int i = 0; i < 5; ++i) {
+            char ts[32];
+            std::snprintf(ts, sizeof ts, "2026-01-01T00:0%d:00", i);
+            cml::Stmt ins(db, "INSERT INTO mem(text,asks,role,project,session,ts,file)"
+                              " VALUES(?1,'','user','p','s',?2,'f')");
+            ins.bind(1, "turn" + std::to_string(i)).bind(2, ts);
+            ok(ins.run(), "turn written");
+        }
+        const std::string d = cml::session_digest(db, "s", {});
+        ok(d.find("turns omitted") == std::string::npos, "a short session is not elided");
+        for (int i = 0; i < 5; ++i) {
+            ok(d.find("turn" + std::to_string(i)) != std::string::npos, "every turn present");
+        }
+    }
+    unsetenv("CML_HOME");
+    std::filesystem::remove_all(tmp);
+}
+
 }  // namespace
 
 void suite_scene() {
     test_scene_schema_is_additive();
     test_scene_indexes_prose_and_not_metadata();
+    test_digest_keeps_the_ending_not_a_prefix();
+    test_short_session_is_not_elided();
 }
 
 }  // namespace cml_test

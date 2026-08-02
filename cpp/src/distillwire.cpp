@@ -77,11 +77,14 @@ bool reply_body(std::string& response, std::string& body, std::string& err) {
 
 }  // namespace
 
-// One call judging a batch of rows. nullopt with `err` set on any failure; the
-// caller leaves those rows unjudged so the next run retries them.
-std::optional<std::vector<Verdict>> judge_batch(
-    const std::string& key, const std::vector<std::pair<std::int64_t, std::string>>& rows,
-    std::string& err, Rubric rubric) {
+// POSTs one batch under `rubric` and hands back the raw reply. Split out because the
+// verdict rubrics and the scene rubric share every line of this and agree on nothing
+// after it — the reply shapes have no field in common past `id`. nullopt means the call
+// never left this machine; a network failure returns an empty body, which each parser
+// reports as an unreadable response exactly as it did before the split.
+std::optional<std::string> post_judge(const std::string& key,
+                                      const std::vector<std::pair<std::int64_t, std::string>>& rows,
+                                      Rubric rubric, std::string& err) {
     const auto [url, model] = llm_conf();
     const auto tmp = data_dir() / ".distill-req.json";
     { std::ofstream(tmp, std::ios::binary) << build_judge_request(model, rows, rubric); }
@@ -122,7 +125,23 @@ std::optional<std::vector<Verdict>> judge_batch(
     std::error_code ec;
     std::filesystem::remove(cfg, ec);
     std::filesystem::remove(tmp, ec);
-    return parse_verdicts(out, err);
+    return out;
+}
+
+std::optional<std::vector<Verdict>> judge_batch(
+    const std::string& key, const std::vector<std::pair<std::int64_t, std::string>>& rows,
+    std::string& err, Rubric rubric) {
+    auto reply = post_judge(key, rows, rubric, err);
+    if (!reply) return std::nullopt;
+    return parse_verdicts(*reply, err);
+}
+
+std::optional<std::vector<Scene>> judge_scenes(
+    const std::string& key, const std::vector<std::pair<std::int64_t, std::string>>& rows,
+    std::string& err) {
+    auto reply = post_judge(key, rows, Rubric::Scene, err);
+    if (!reply) return std::nullopt;
+    return parse_scenes(*reply, err);
 }
 
 std::string build_judge_request(const std::string& model,

@@ -22,4 +22,11 @@ std::optional<std::vector<Verdict>> judge_batch(
     const std::string& key, const std::vector<std::pair<std::int64_t, std::string>>& rows,
     std::string& err, Rubric rubric);
 
+// The same call under Rubric::Scene, where a "row" is a whole session's digest and the
+// reply is summaries rather than verdicts. Same failure contract: nullopt leaves the
+// sessions unwritten, and `build_scenes` picks them up on the next run.
+std::optional<std::vector<Scene>> judge_scenes(
+    const std::string& key, const std::vector<std::pair<std::int64_t, std::string>>& rows,
+    std::string& err);
+
 }  // namespace cml

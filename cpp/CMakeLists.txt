@@ -86,6 +86,7 @@ add_library(cml_core STATIC
   src/forget.cpp
   src/distill.cpp
   src/distillwire.cpp
+  src/scenes.cpp
   src/curatorprompts.cpp
   src/loops.cpp
   src/hint.cpp

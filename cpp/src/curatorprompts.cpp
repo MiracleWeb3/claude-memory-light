@@ -62,8 +62,22 @@ Reply ONLY with JSON, keep always true, gist "" for every row that is not durabl
 // nothing in six months, because it records that time passed rather than what is now
 // known. So the prompt names that failure mode outright and gives `abandoned` as the
 // honest exit for a session that established nothing.
-constexpr const char* kScene = R"CML(You are given one working session between a developer and an assistant. Produce a title, a summary of two to three sentences, and an outcome of exactly `solved`, `abandoned`, or `ongoing`.
-The summary must state what was actually learned or decided and why — the mechanism, the root cause, the rule that came out of it. It must NOT be an activity log. "worked on the parser", "debugged the hook", "made several changes" are failures: they describe that time passed, not what is now known. If the session established nothing worth knowing months from now, say so in one sentence and set outcome to `abandoned`.
+//
+// It is addressed to a BATCH, unlike its first draft. build_scenes sends four sessions
+// per call (a single one would cost 76 calls instead of 19), and a prompt opening "you
+// are given one working session" in front of four digests invites the model to merge
+// them or answer only the first — a wrong reply shape on a paid call.
+//
+// The last two paragraphs are calibration, not decoration. Measured on the first 20 real
+// sessions: 4 came back as pure activity logs, over the 3-in-20 bar the plan set, and
+// EVERY summary — including the good ones — opened with a narration sentence and
+// appended the finding after it ("Deployed platform v2 ... Key lessons: ..."). Two
+// sessions that established nothing came back `solved`, because `abandoned` reads as
+// "the work failed" unless it is said outright that it means "nothing was learned".
+constexpr const char* kScene = R"CML(Each row you are given is one whole working session between a developer and an assistant. For EVERY row, produce a title, a summary of two to three sentences, and an outcome of exactly `solved`, `abandoned`, or `ongoing`, carrying that row's id through unchanged. Reply with exactly as many scenes as there were rows — never merge two sessions into one. A row may be elided in the middle; the opening and the ending are always present, and the ending is what decides the outcome.
+The summary must state what was actually learned or decided and why — the mechanism, the root cause, the rule that came out of it. It must NOT be an activity log. "worked on the parser", "debugged the hook", "made several changes" are failures: they describe that time passed, not what is now known.
+Do NOT open with what was done. "Deployed X", "Updated three plugins", "The build completed" — narrating first and appending the insight afterwards wastes the sentence that actually gets read. Open with the finding itself: the cause, the constraint, the decision and its reason, the measurement that changed a conclusion. Name what someone would otherwise get wrong.
+A session can succeed at its task and still teach nothing. Deploying a service, bumping versions, applying a known fix: if nothing is now known that a competent engineer would not have assumed, the outcome is `abandoned` however well the work went — one honest sentence saying so, and no significance invented for it. `solved` means something is now known that was not known before. `ongoing` means the finding is real but the work is unfinished.
 Reply with a JSON object: {"scenes": [{"id": <id>, "title": ..., "summary": ..., "outcome": ...}]}. No prose outside it.)CML";
 
 constexpr const char* kKeepReply =

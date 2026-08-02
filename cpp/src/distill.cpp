@@ -21,6 +21,7 @@
 #include "curatorprompts.hpp"
 #include "db.hpp"
 #include "paths.hpp"
+#include "scenes.hpp"
 #include "utf8.hpp"
 
 namespace cml {
@@ -200,12 +201,15 @@ int distill(const std::vector<std::string>& args) {
     // hold the lock and a lot of balance spent at once. It was accepted and silently
     // ignored until 2026-08-02 — the spawn in indexer/curator.hpp had been passing it all
     // along while every run drained everything.
+    // Flags are read before any of them acts: --all is destructive, and which table it
+    // clears depends on whether --scenes appears later in the same argv.
     std::optional<std::size_t> cap;
+    bool all = false, scenes = false;
     for (std::size_t i = 0; i < args.size(); ++i) {
         if (args[i] == "--all") {
-            db.exec("DELETE FROM distilled");
-            std::printf("re-judging every row from scratch (%d prior verdicts cleared)\n",
-                        sqlite3_changes(db.raw()));
+            all = true;
+        } else if (args[i] == "--scenes") {
+            scenes = true;
         } else if (args[i] == "--limit" && i + 1 < args.size()) {
             const long v = std::strtol(args[i + 1].c_str(), nullptr, 10);
             if (v > 0) cap = static_cast<std::size_t>(v);
@@ -213,6 +217,28 @@ int distill(const std::vector<std::string>& args) {
     }
     // Wall clock, not CPU: nearly all of it is spent waiting on the endpoint.
     const auto t0 = std::chrono::steady_clock::now();
+
+    // --scenes is L2 and runs alone: it judges nothing, drops nothing, and its --limit
+    // counts SESSIONS rather than rows, because the run that matters is the first
+    // twenty read by hand before the rest of the money is spent.
+    if (scenes) {
+        if (all) {
+            db.exec("DELETE FROM scene");
+            std::printf("re-summarising every session from scratch (%d prior scenes cleared)\n",
+                        sqlite3_changes(db.raw()));
+        }
+        const std::size_t n = build_scenes(db, *key, cap, true);
+        const std::chrono::duration<double> secs = std::chrono::steady_clock::now() - t0;
+        std::printf("scenes: %zu written in %.0fs (%s)\n", n, secs.count(),
+                    llm_conf().second.c_str());
+        return 0;
+    }
+
+    if (all) {
+        db.exec("DELETE FROM distilled");
+        std::printf("re-judging every row from scratch (%d prior verdicts cleared)\n",
+                    sqlite3_changes(db.raw()));
+    }
     auto [kept, dropped] = distill_new(db, *key, cap, true, Rubric::Assistant);
     const auto [ukept, udropped] = distill_new(db, *key, cap, true, Rubric::User);
     kept += ukept;
