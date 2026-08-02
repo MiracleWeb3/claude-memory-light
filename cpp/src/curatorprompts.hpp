@@ -20,7 +20,10 @@ namespace cml {
 // at 45-84% minted against 16% for the same clause asked on its own: the keep list is
 // deliberately generous, and that generosity bleeds into the gist decision when one call
 // is asked to do both.
-enum class Rubric { Assistant, User, Durability };
+// Scene is the odd one out: it judges nothing and drops nothing. It reads a whole
+// session and writes one L2 summary of it, so it is a rubric only in the sense that it
+// is a system prompt selected here. It rides the same wire as the rest.
+enum class Rubric { Assistant, User, Durability, Scene };
 
 // The system prompt for a rubric. Editing these strings IS a behaviour change.
 std::string_view curator_prompt(Rubric r);

@@ -106,6 +106,56 @@ void test_verdicts_survive_a_real_reply_and_a_broken_one() {
     ok(err.rfind("verdict json bad", 0) == 0, "and named as such");
 }
 
+// Scenes are L2: a whole session in, one summary out. Nothing here judges or drops.
+void test_scene_request_and_parse() {
+    const std::vector<std::pair<std::int64_t, std::string>> rows = {
+        {0, "user: daita keeps dropping on patro1a\nassistant: path MTU is 1280, "
+            "constant-size padding cannot fit\nuser: turning daita off fixed it"}};
+    const std::string req = cml::build_judge_request("m", rows, cml::Rubric::Scene);
+    ok(req.find("outcome") != std::string::npos, "the rubric asks for an outcome");
+    ok(req.find("daita") != std::string::npos, "the digest is in the body");
+
+    // {"scenes":[…]}, an object — never a bare array. build_judge_request hard-codes
+    // response_format json_object for every rubric, and every key lookup on an array
+    // returns INCORRECT_TYPE, which is the same value as an empty batch.
+    std::string reply = R"({"choices":[{"message":{"content":
+      "{\"scenes\":[{\"id\":0,\"title\":\"DAITA vs 1280 path MTU\",\"summary\":\"DAITA padding cannot fit under a 1280-byte path MTU on patro1a; disabling DAITA fixed it, verified A/B on the real network.\",\"outcome\":\"solved\"}]}"}}]})";
+    std::string err;
+    const auto scenes = cml::parse_scenes(reply, err);
+    ok(scenes.has_value(), "scenes parse");
+    ok(scenes->size() == 1 && (*scenes)[0].outcome == "solved", "outcome read");
+    ok((*scenes)[0].title.rfind("DAITA vs", 0) == 0, "title read");
+
+    // The shape that costs real money. Read as an empty batch, a whole paid run reports
+    // success with nothing written and no diagnostic anywhere; it must be an error.
+    std::string bare =
+        R"({"choices":[{"message":{"content":"[{\"id\":0,\"summary\":\"s\",\"outcome\":\"solved\"}]"}}]})";
+    ok(!cml::parse_scenes(bare, err).has_value(), "a bare array is refused, not read as zero");
+    ok(err.find("scenes") != std::string::npos, "and the error names what was missing");
+
+    // A summary-less row is skipped, not written hollow: `scene` has no PRIMARY KEY and
+    // build_scenes skips sessions already in it, so an empty row would be permanent.
+    std::string thin = R"({"choices":[{"message":{"content":"{\"scenes\":[{\"id\":1,\"title\":\"t\"}]}"}}]})";
+    const auto none = cml::parse_scenes(thin, err);
+    ok(none.has_value() && none->empty(), "a scene with no summary is skipped");
+}
+
+// The rubric earns its place only by refusing the activity log — the summary a model
+// writes by default, fluent and worth nothing months later.
+void test_scene_rubric_forbids_activity_logs() {
+    const std::string p{cml::curator_prompt(cml::Rubric::Scene)};
+    ok(p.find("worked on") != std::string::npos,
+       "the prompt names the failure mode it must refuse");
+    // curator_prompt used to be an if plus a ternary: a rubric with no prompt of its own
+    // silently got this one. That is a wrong system prompt on a paid call.
+    ok(p != std::string(cml::curator_prompt(cml::Rubric::Assistant)),
+       "Scene reaches its own prompt, not the assistant's by fallthrough");
+    for (const char* word : {"solved", "abandoned", "ongoing"}) {
+        ok(p.find(word) != std::string::npos, "the outcome vocabulary is closed and stated");
+    }
+    ok(p.find("\"scenes\"") != std::string::npos, "and the object shape is spelled out");
+}
+
 }  // namespace
 
 void suite_curate() {
@@ -114,6 +164,8 @@ void suite_curate() {
     test_user_rows_are_judged_by_their_own_rubric();
     test_durability_is_judged_apart_from_keeping();
     test_verdicts_survive_a_real_reply_and_a_broken_one();
+    test_scene_request_and_parse();
+    test_scene_rubric_forbids_activity_logs();
 }
 
 }  // namespace cml_test

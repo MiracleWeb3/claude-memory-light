@@ -54,6 +54,18 @@ For a durable row the gist is its reusable essence in at most 120 characters.
 SEPARATELY, and for EVERY row whether or not it earns a gist, write `asks`: 3 to 5 short questions or phrasings the developer might type months from now when they want this row back. Two rules. Use THEIR words, not the row's — the entire point is to bridge vocabulary the row does not contain, so copying its sentences is worthless. And describe the SYMPTOM or the goal, not the solution, because that is what someone types before they know the answer. A row about "tap-drag lock lives in the xfconf pointers channel" should carry asks like "trackpad keeps selecting after I lift my finger", "how do I stop double-tap dragging on linux", "text highlights on its own when I move the cursor". For a row that is pure status or noise, asks:[].
 Reply ONLY with JSON, keep always true, gist "" for every row that is not durable: {"verdicts":[{"id":<id>,"keep":true,"gist":"","asks":["...","..."]}]})CML";
 
+// SCENE — L2, one summary per working session. Not a judgement: nothing is kept or
+// dropped here, a whole session goes in and one paragraph comes out.
+//
+// The entire difficulty is the activity log. Asked to summarise a transcript, a model
+// writes "worked on the parser, fixed a bug, ran the tests" — true, fluent, and worth
+// nothing in six months, because it records that time passed rather than what is now
+// known. So the prompt names that failure mode outright and gives `abandoned` as the
+// honest exit for a session that established nothing.
+constexpr const char* kScene = R"CML(You are given one working session between a developer and an assistant. Produce a title, a summary of two to three sentences, and an outcome of exactly `solved`, `abandoned`, or `ongoing`.
+The summary must state what was actually learned or decided and why — the mechanism, the root cause, the rule that came out of it. It must NOT be an activity log. "worked on the parser", "debugged the hook", "made several changes" are failures: they describe that time passed, not what is now known. If the session established nothing worth knowing months from now, say so in one sentence and set outcome to `abandoned`.
+Reply with a JSON object: {"scenes": [{"id": <id>, "title": ..., "summary": ..., "outcome": ...}]}. No prose outside it.)CML";
+
 constexpr const char* kKeepReply =
     "Reply ONLY with JSON: {\"verdicts\":[{\"id\":<id>,\"keep\":true|false,\"gist\":\"\"}]}"
     " — always leave gist empty; durability is judged in a separate pass.";
@@ -71,8 +83,16 @@ const std::string& user_prompt() {
 }  // namespace
 
 std::string_view curator_prompt(Rubric r) {
-    if (r == Rubric::Durability) return kDurability;
-    return r == Rubric::User ? user_prompt() : assistant_prompt();
+    // A switch with no default, deliberately. This was an if plus a ternary, which meant
+    // a new rubric with no prompt of its own silently got the ASSISTANT one — a wrong
+    // system prompt on a paid call, invisible to -Werror. -Wswitch sees it for free.
+    switch (r) {
+        case Rubric::Assistant: return assistant_prompt();
+        case Rubric::User: return user_prompt();
+        case Rubric::Durability: return kDurability;
+        case Rubric::Scene: return kScene;
+    }
+    return assistant_prompt();  // unreachable; a scoped enum can still hold a stray value
 }
 
 Rubric rubric_for_role(std::string_view role) {

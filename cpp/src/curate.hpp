@@ -49,6 +49,15 @@ struct Verdict {
     std::string asks;
 };
 
+// L2: one working session, summarised. `id` is the batch index the request carried —
+// the caller maps it back to a session — not a rowid.
+struct Scene {
+    std::int64_t id = 0;
+    std::string title;
+    std::string summary;
+    std::string outcome;  // solved | abandoned | ongoing, per the rubric
+};
+
 // The two halves of a judging round that touch no network and no disk, split out
 // so they can be asserted on: the request body, and the verdicts dug out of the
 // reply. `response` is taken by reference because the parser pads it in place.
@@ -56,6 +65,14 @@ std::string build_judge_request(const std::string& model,
                                 const std::vector<std::pair<std::int64_t, std::string>>& rows,
                                 Rubric rubric = Rubric::Assistant);
 std::optional<std::vector<Verdict>> parse_verdicts(std::string& response, std::string& err);
+
+// Scenes need their own parser rather than a generalised one: parse_verdicts requires
+// `keep` and silently skips any row without it, and a scene shares no field with a
+// verdict past `id`. A missing `scenes` array is an ERROR here, not an empty result —
+// the reply is required to be an object (response_format is json_object for every
+// rubric), and a bare array reads as "this batch had nothing" on every key lookup. That
+// is a whole paid run reporting success with nothing written and no diagnostic.
+std::optional<std::vector<Scene>> parse_scenes(std::string& response, std::string& err);
 
 // Judges every unjudged row belonging to `rubric` (Assistant covers assistant and
 // summary rows, User covers the developer's own messages). `cap` limits rows per

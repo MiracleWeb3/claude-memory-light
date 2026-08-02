@@ -52,6 +52,29 @@ std::string run_capture(const std::vector<std::string>& argv) {
     return out;
 }
 
+// The model's answer, dug out of the /chat/completions envelope and copied out: it is
+// JSON inside a JSON string, so each caller parses `body` again under its own key. The
+// copy is not waste — the view points into the parser's buffer, which dies here.
+bool reply_body(std::string& response, std::string& body, std::string& err) {
+    simdjson::dom::parser parser;
+    simdjson::dom::element resp;
+    if (const auto e = parser.parse(response).get(resp); e != simdjson::SUCCESS) {
+        err = "deepseek response unreadable: " + std::string(simdjson::error_message(e));
+        return false;
+    }
+    std::string_view content;
+    simdjson::dom::array choices;
+    if (resp["choices"].get(choices) != simdjson::SUCCESS || choices.size() == 0 ||
+        choices.at(0)["message"]["content"].get(content) != simdjson::SUCCESS) {
+        std::string_view msg;
+        if (resp["error"]["message"].get(msg) != simdjson::SUCCESS) msg = "no content";
+        err = "deepseek error: " + std::string(msg);
+        return false;
+    }
+    body.assign(content);
+    return true;
+}
+
 }  // namespace
 
 // One call judging a batch of rows. nullopt with `err` set on any failure; the
@@ -127,24 +150,8 @@ std::string build_judge_request(const std::string& model,
 }
 
 std::optional<std::vector<Verdict>> parse_verdicts(std::string& response, std::string& err) {
-    simdjson::dom::parser parser;
-    simdjson::dom::element resp;
-    if (const auto e = parser.parse(response).get(resp); e != simdjson::SUCCESS) {
-        err = "deepseek response unreadable: " + std::string(simdjson::error_message(e));
-        return std::nullopt;
-    }
-    std::string_view content;
-    simdjson::dom::array choices;
-    if (resp["choices"].get(choices) != simdjson::SUCCESS || choices.size() == 0 ||
-        choices.at(0)["message"]["content"].get(content) != simdjson::SUCCESS) {
-        std::string_view msg;
-        if (resp["error"]["message"].get(msg) != simdjson::SUCCESS) msg = "no content";
-        err = "deepseek error: " + std::string(msg);
-        return std::nullopt;
-    }
-
-    // The model's answer is JSON inside a JSON string — parsed again, on its own.
-    std::string body(content);
+    std::string body;
+    if (!reply_body(response, body, err)) return std::nullopt;
     simdjson::dom::parser inner;
     simdjson::dom::element parsed;
     if (const auto e = inner.parse(body).get(parsed); e != simdjson::SUCCESS) {
@@ -177,6 +184,41 @@ std::optional<std::vector<Verdict>> parse_verdicts(std::string& response, std::s
         }
     }
     return verdicts;
+}
+
+std::optional<std::vector<Scene>> parse_scenes(std::string& response, std::string& err) {
+    std::string body;
+    if (!reply_body(response, body, err)) return std::nullopt;
+    simdjson::dom::parser inner;
+    simdjson::dom::element parsed;
+    if (const auto e = inner.parse(body).get(parsed); e != simdjson::SUCCESS) {
+        err = "scene json bad: " + std::string(simdjson::error_message(e));
+        return std::nullopt;
+    }
+    // Unlike parse_verdicts, a missing array is refused rather than read as an empty
+    // batch. Every key lookup on a bare top-level array returns INCORRECT_TYPE, so the
+    // wrong shape and an honestly empty answer are the same value — and the wrong shape
+    // is the likelier of the two. Silence there is a paid run reporting success.
+    simdjson::dom::array arr;
+    if (parsed["scenes"].get(arr) != simdjson::SUCCESS) {
+        err = "scene json has no \"scenes\" array";
+        return std::nullopt;
+    }
+    std::vector<Scene> scenes;
+    for (auto s : arr) {
+        Scene sc;
+        std::string_view v;
+        if (s["id"].get(sc.id) != simdjson::SUCCESS) continue;
+        // A summary is the whole point of the row, and writing an empty one would mark
+        // the session done forever — build_scenes skips what is already in `scene`.
+        // Skipping it instead leaves the session for the next run.
+        if (s["summary"].get(v) != simdjson::SUCCESS || v.empty()) continue;
+        sc.summary = v;
+        if (s["title"].get(v) == simdjson::SUCCESS) sc.title = v;
+        if (s["outcome"].get(v) == simdjson::SUCCESS) sc.outcome = v;
+        scenes.push_back(std::move(sc));
+    }
+    return scenes;
 }
 
 }  // namespace cml
