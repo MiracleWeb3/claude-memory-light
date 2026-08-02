@@ -8,7 +8,21 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release)
 endif()
 
-add_compile_options(-Wall -Wextra -Wpedantic)
+# The floor. -Werror costs nothing here — the tree builds clean under -Wall -Wextra
+# -Wpedantic today, so this only stops the next warning from becoming permanent. The
+# vendored C is exempted below with -w; third-party code must never be able to break
+# our build on a warning we cannot fix.
+add_compile_options(-Wall -Wextra -Wpedantic -Werror)
+
+# Debug is the sanitizer mode, not just an unoptimised build: a memory index that is
+# wrong is worse than one that is slow, and the selftest is the thing worth running
+# under ASan/UBSan. Release stays clean and fast.
+#   cmake -S . -B build-debug -DCMAKE_BUILD_TYPE=Debug && cmake --build build-debug
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+  add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer)
+  add_compile_definitions(_GLIBCXX_ASSERTIONS)
+  add_link_options(-fsanitize=address,undefined)
+endif()
 
 # map's page assets (three.js, OrbitControls, app.js, the HTML shell) are embedded
 # by the assembler's .incbin instead of a generated string literal — see
