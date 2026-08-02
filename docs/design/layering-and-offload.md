@@ -71,18 +71,45 @@ than a diagram of a build log and needs no renderer. Not copied.
 `PostToolUse` -> `cml offload` -> `hookSpecificOutput.updatedToolOutput`, which replaces the
 tool result before it reaches the model.
 
-**Verified, not assumed.** `strings` finds `updatedToolOutput` 13x in the installed binary
-(`~/.local/share/claude/versions/2.1.220`). A first `grep -rl` over the same file returned 0
-for it — and 0 for `additionalContext`, which cml provably emits on every prompt. That
-control is what exposed the method as confounded (263 MB ELF, bundle compressed) rather than
-the field as missing. Implementation still starts with a live smoke test; a docs claim and a
-string in a binary are not a firing hook.
+**Verified on the real path (2026-08-02).** `strings` finds `updatedToolOutput` 13x in the
+installed binary (`~/.local/share/claude/versions/2.1.220`). A first `grep -rl` over the same
+file returned 0 for it — and 0 for `additionalContext`, which cml provably emits on every
+prompt. That control is what exposed the method as confounded (263 MB ELF, bundle compressed)
+rather than the field as missing.
 
-**Trigger.** Result >= 2 KB **and** the tool is on an explicit allowlist: `Bash`, `Grep`,
-`Glob`, and any name starting `mcp__`. An allowlist, not a denylist — an unknown tool is left
-alone, so a tool added by a future version is never silently condensed. Never `Read`, `Edit`,
-`Write`, `NotebookEdit`: that is the file being worked on, and shrinking it is how the model
-loses the thing it is editing.
+The smoke test then ran twice, and the first run failed in the way that matters:
+
+| run | replacement emitted | what the model saw |
+|---|---|---|
+| 1 | `"CML_PROBE_REPLACED_THIS"` (bare string) | the original 1..50 |
+| 2 | `{"stdout": "CML_PROBE_REPLACED_THIS", "stderr": "", "interrupted": false, "isImage": false, "noOutputExpected": false}` | only the sentinel |
+
+`updatedToolOutput` is **validated against the tool's own output schema and rejected in
+silence** — the binary holds ``…does not match `${toolName}`'s output shape; using original
+output``, but it never reaches stdout, stderr, or `--debug`. A wrong shape is
+indistinguishable from a hook that never ran. Run 1 read exactly like the kill result and was
+not one; taking it at face value would have ended the machine on a confounded test.
+
+Run 2 also settled a question the spec had only hedged: **the replacement is what gets
+persisted to the transcript.** The original output is gone from it entirely. The spill file is
+therefore the only surviving copy, not a convenience.
+
+**Trigger.** Result >= 2 KB **and** `tool_name == "Bash"`. Nothing else, in v1.
+
+Measured over the 146 transcripts, of the 11.60 MB carried by results at or above 2 KB:
+
+| tool | results | MB | share |
+|---|---:|---:|---:|
+| Read | 1,057 | 6.23 | 53.7% |
+| **Bash** | **1,029** | **4.09** | **35.2%** |
+| other | 317 | 1.29 | 11.1% |
+
+`Read` is the largest sink and is still never touched: at `PostToolUse` you have just read
+that file *because you need it*. Condensing a `Read` would have to be retroactive, which this
+hook cannot do — a real future direction, not this. `Grep`, `Glob` and MCP wait until their
+result shapes are recorded the way Bash's was; guessing a shape yields a feature that does
+nothing and reports success. So Bash is the whole reachable win: **35.2% of the >= 2 KB class,
+or 22.2% of all tool bytes.**
 
 **Condenser — deterministic, zero LLM.** A hook that blocks on a network call stalls every
 tool call in the session. Kept verbatim: lines matching
@@ -153,8 +180,14 @@ Both halves are gated on a measured number, not on shipping.
   number whatever the layering did. The scene headline is presentation and is added in
   `recall()` only after this gate passes.
 - **Offload:** measured tool bytes reaching context, before and after, over real sessions —
-  not a selftest, not a synthetic transcript. Target: the >= 2 KB class shrinks by at least
-  half, which on the measured distribution is ~31% of all tool bytes.
+  not a selftest, not a synthetic transcript. Target: **Bash results >= 2 KB shrink by at
+  least half**, which on the measured distribution is ~11% of all tool bytes.
+
+  That is the honest ceiling for v1 and it is well short of the 61% headline that motivated
+  this — most of which came from their layering, and most of the rest of the reachable bytes
+  here sit in `Read`, which is deliberately out of scope. A target set against the whole
+  >= 2 KB class (~31%) would have been unreachable by construction, and hitting "only" 11%
+  would have read as failure against a number that was never possible.
 - **No silent loss:** for every offloaded result, the spill file exists and its content
   matches what the tool actually printed. Asserted in selftest.
 - Recall on a prompt matching no scene returns exactly what it returns today.
