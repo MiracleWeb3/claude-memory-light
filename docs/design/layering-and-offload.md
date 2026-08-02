@@ -198,8 +198,10 @@ Both halves are gated on a measured number, not on shipping.
   least half**, which on the measured distribution is ~11% of all tool bytes.
 
   **Measured before wiring: 48.2%** over 1,046 real Bash results (4.17 MB -> 2.16 MB), so the
-  target is missed by 1.8 points — ~10.5% of all tool bytes rather than ~11%. The prediction
-  of what a half would be worth was sound; the half is what the rules do not reach. See
+  target is missed by 1.8 points. The headline it exists to produce very nearly holds anyway:
+  2.01 MB saved is **10.9% of all tool bytes against the predicted ~11%**, because the real
+  Bash >= 2 KB slice (4.17 MB) is a little larger than the 4.08 MB the estimate assumed. It is
+  the per-corpus half that the rules do not reach, not the byte figure it was chosen to buy. See
   Calibration below for the curve, and for the 53.0% that is available with the drag passes
   off at 38% leave-one-out survival. Whether that trade is worth taking is a decision, not a
   knob to turn until the number clears.
