@@ -185,14 +185,41 @@ drill order is standing rules -> episode -> the message itself.
 
 Both halves are gated on a measured number, not on shipping.
 
-- **Scenes:** `cml eval` recall@3 must exceed **19.7%**. If it does not move, the layer is
-  decoration and gets deleted rather than defended.
+- **Scenes — the recall@3 gate was withdrawn on 2026-08-03, before implementation, because it
+  is unreachable by construction.** Not lowered: withdrawn, and replaced with a measurement of
+  what scenes can actually do.
 
-  Measured with scenes as a **re-rank over the same `mem` rowids**, not as a replacement
-  result. `eval.cpp:109` matches `hits[i].rowid` against the answer row; a scene line
-  occupying one of the three slots would cut the matchable slots to two and depress the
-  number whatever the layering did. The scene headline is presentation and is added in
-  `recall()` only after this gate passes.
+  `retrieve()` reranks a candidate pool hard-capped at `kCandidates = 40` (`recall.cpp:46` →
+  `search.cpp:76`), so `recall@40` is the ceiling of any reordering whatsoever. Measured
+  against the live index (2,830 rows, 933 Q-A pairs, 311 sampled):
+
+  | k | 1 | 3 | 5 | 10 | 20 | 40 |
+  |---|---|---|---|---|---|---|
+  | recall@k | 10.9% | **15.8%** | 17.4% | 18.6% | 19.3% | **19.6%** |
+
+  Two things follow. The **19.7% baseline was stale** — it was true at a smaller corpus; today
+  the same command reports 15.8%. And **19.6% < 19.7%**: a perfect oracle promoting the answer
+  to rank 1 every time it exists in the pool still fails the bar. Widening the pool does not
+  rescue it (100 candidates → 21.9%, 400 → 22.2%); the answer is not in the BM25 set for ~80%
+  of questions, so re-ranking is the wrong lever entirely.
+
+  Real headroom was +3.8 points — twelve questions of 311 — against **49 currently-hitting
+  questions that a wrong promotion can demote.** Asymmetric in the wrong direction.
+
+  The measurement also leaked. A scene is written from its own session's rows, and eval's
+  ground truth is the next turn *in that same session*, so a scene match would lift its own
+  answer for a reason that cannot occur in production. **96.1% of sampled pairs sit in a
+  session that owns a scene.** The escape hatch does not exist: `--cross-session` excludes the
+  session the answer lives in and therefore measures **0.0%, always** — a pre-existing
+  `eval.cpp` defect whose header comment claims the bug is fixed.
+
+  **So scenes are built as a retrievable object, not a ranking signal:** they answer
+  `cml search --role scene`, and `recall()` spends one of its three lines on a matching scene
+  headline. Measured by coverage over the last 200 real prompts, and by reading a sample of 15
+  and counting how many state a mechanism or a decision rather than restating that work
+  happened. The standard is unchanged — a layer that does not earn its place gets deleted
+  rather than defended. Only the metric changed, because the old one could not be passed by
+  anything.
 - **Offload:** measured tool bytes reaching context, before and after, over real sessions —
   not a selftest, not a synthetic transcript. Target: **Bash results >= 2 KB shrink by at
   least half**, which on the measured distribution is ~11% of all tool bytes.
