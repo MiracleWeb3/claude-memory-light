@@ -240,11 +240,12 @@ Your memory already exists. It's the transcripts. Index them; don't make a human
 | `cml search <terms> [--project P] [--role R] [--limit N] [--semantic\|--keyword]` | hybrid ranked search |
 | `cml embed [--all]` | build (or rebuild) the semantic index — one-time init, then automatic |
 | `cml forget <rowid...>` \| `--match "<q>" [--yes]` | purge junk memories, blocklisted so reindexing never resurrects them (`--clear` undoes) |
-| `cml distill [--all]` | optional LLM curation: a cheap external model (DeepSeek by default) judges every row on two independent axes — *keep* (is there content?) and *durable* (worth a permanent point?). Undurable rows are kept and stay searchable, they simply carry no gist. Runs automatically at index time once a key sits in `llm.key`; `--all` re-judges from scratch |
+| `cml distill [--all] [--limit N]` | optional LLM curation: a cheap external model (DeepSeek by default) judges every row on two independent axes — *keep* (is there content?) and *durable* (worth a permanent point?). Undurable rows are kept and stay searchable, they simply carry no gist. Once a key sits in `llm.key`, `cml index` starts this **detached in the background** — it costs ~20s a row, so it can never run on the Stop hook's clock; the last run's outcome shows up in `cml doctor`. `--all` re-judges from scratch, `--limit` caps rows per run |
 | `cml map [--limit N] [--code [G]] [--no-open] [--raw]` | build + open the 3D memory map; `--raw` plots every row instead of only knowledge, `--code` overlays graphify's code graph (opt-in) |
 | `cml loops [--days N] [--limit K]` | chronic-loop detection: asks recurring across ≥2 sessions in the window, most-recurrent first (default 30 days, top 10) |
 | `cml stats` | row counts, knowledge count, DB size |
-| `cml doctor` | environment check, graphify detection |
+| `cml doctor` | environment check, graphify detection, which binary is running, and what the last background curation run actually did |
+| `cml version` | version of *this* binary — the hooks run an installed copy, so it need not match the repo you are reading |
 | `cml capture` | *(hook)* append turn's user message to the learning inbox |
 | `cml nudge` | *(hook)* SessionStart briefing: learning-inbox nag (always eligible), plus open loops and wiki topics (skipped on resume/compact) |
 | `cml hint` | *(hook)* UserPromptSubmit: phrase-table classifier nudges a capture, once per session per category |

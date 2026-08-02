@@ -35,16 +35,27 @@ int usage() {
         "     [--semantic|--keyword] | forget <rowid...> | forget --match \"<q>\" [--yes]\n"
         "     | distill [--all] [--limit N] | embed [--all] | map [--limit N] [--no-open] [--raw]\n"
         "     | loops [--days N] [--limit K] | stats | doctor | capture | nudge | hint\n"
-        "     | recall | eval [-k N] [--limit N] | state [--project P]\n");
+        "     | recall | eval [-k N] [--limit N] | state [--project P] | version\n");
     return 0;
 }
 
 }  // namespace
 
+#ifndef CML_VERSION
+#define CML_VERSION "unknown"  // built outside CMake; the manifest was not readable
+#endif
+
 int main(int argc, char** argv) {
     const std::string_view cmd = (argc > 1) ? argv[1] : "";
     std::vector<std::string> rest;
     for (int i = 2; i < argc; ++i) rest.emplace_back(argv[i]);
+
+    // "Which cml is actually running?" had no answer before this, so a stale install
+    // looked exactly like a bug in the source.
+    if (cmd == "version" || cmd == "--version") {
+        std::printf("cml %s\n", CML_VERSION);
+        return 0;
+    }
 
     // Hook-facing subcommands exit 0 on every path, including failure: a memory hook
     // that returns non-zero can interrupt the user's session.

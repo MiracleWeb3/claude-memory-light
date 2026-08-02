@@ -97,6 +97,9 @@ int doctor() {
     const fs::path data = data_dir();
     const fs::path dbp = data / "index.db";
 
+    // First line on purpose: every other number here describes whichever binary is
+    // speaking, and the hooks run an installed copy that nothing used to keep current.
+    std::printf("binary          : cml %s at %s\n", CML_VERSION, idx::self_exe().c_str());
     std::printf("transcripts dir : %s (%s)\n", projects.string().c_str(),
                 mark(fs::is_directory(projects, ec)));
     std::printf("data dir        : %s (%s)\n", data.string().c_str(),

@@ -24,6 +24,20 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug")
   add_link_options(-fsanitize=address,undefined)
 endif()
 
+# One source of truth for the version: the plugin manifest that Claude Code already reads.
+# A second copy in a header would drift, and a binary that misreports its own version is
+# worse than one that cannot report it — "which cml is the hook actually running" was
+# unanswerable until now, which is exactly how a stale install hides.
+set(CML_VERSION "unknown")
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../.claude-plugin/plugin.json")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/../.claude-plugin/plugin.json" CML_PLUGIN_JSON)
+  string(JSON CML_VERSION_READ ERROR_VARIABLE CML_VERSION_ERR GET "${CML_PLUGIN_JSON}" version)
+  if(NOT CML_VERSION_ERR)
+    set(CML_VERSION "${CML_VERSION_READ}")
+  endif()
+endif()
+message(STATUS "cml version: ${CML_VERSION}")
+
 # map's page assets (three.js, OrbitControls, app.js, the HTML shell) are embedded
 # by the assembler's .incbin instead of a generated string literal — see
 # src/mapassets.S.in. They are read from the Rust source tree, never copied.
@@ -90,11 +104,22 @@ add_library(cml_core STATIC
   "${CMAKE_CURRENT_BINARY_DIR}/mapassets.S"
 )
 target_include_directories(cml_core PUBLIC src ${SQLITE3_INC} ${SIMDJSON_INC})
+target_compile_definitions(cml_core PUBLIC CML_VERSION="${CML_VERSION}")
 target_link_libraries(cml_core PUBLIC sqlite_vec)
 target_link_libraries(cml_core PUBLIC ${SQLITE3_LIB} ${SIMDJSON_LIB})
 
 add_executable(cml src/main.cpp src/capture.cpp)
 target_link_libraries(cml PRIVATE cml_core)
+
+# A build that never reaches the hooks is a build nobody runs. bin/cml-run installs the
+# binary only when it is MISSING, so every rebuild after the first left the Stop hook
+# executing the previous one — which is how a fixed bug stayed live for a day while the
+# repo said otherwise. Refresh an install that already exists; never create one, so a
+# fresh clone of this repo does not quietly write into somebody's ~/.claude.
+add_custom_command(TARGET cml POST_BUILD
+  COMMAND "${CMAKE_COMMAND}" "-DCML_BIN=$<TARGET_FILE:cml>"
+          -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/refresh-install.cmake"
+  VERBATIM)
 
 # One runnable check, no framework: asserts that fail loudly on a broken filter.
 add_executable(cml_selftest
