@@ -141,6 +141,16 @@ writes the untouched original to a spill file before emitting the replacement, a
 path in the symbol line. No schema change, no index bloat, and recovery is `cat` — reachable
 by the model and by hand, needing no new cml subcommand.
 
+**Offload changes what cml indexes about itself.** `cml index` reads the transcript, and the
+transcript now holds the condensed form, so `work` rows are built from the replacement rather
+than the original. Since `work` truncates at 1,200 chars anyway, this is mostly an improvement
+— the flagged lines sit in the first few hundred bytes, where before they were often past the
+cut — but it is a real trade: the middle of a long listing is no longer searchable at all,
+because it exists only in the spill file, which is not indexed. `cml search` will find the
+error in a build log it could previously miss, and will no longer find line 300 of a directory
+listing. Also cosmetic: every offloaded `work` row now contains the spill path, a term common
+enough that the rarity gate (`>6%` of the corpus) filters it out on its own.
+
 **Spill files are the only copy, and nothing prunes them.** Two consequences worth stating
 plainly rather than discovering later:
 
