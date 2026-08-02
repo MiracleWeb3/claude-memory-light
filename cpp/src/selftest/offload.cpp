@@ -184,6 +184,33 @@ void test_grew_path_reports_no_stale_counts() {
     ok(c.flagged == 0, "carrying no count from the pass that was thrown away");
 }
 
+// The calibration seam. Every other test in this file calls the two-argument form, so they
+// are collectively the assertion that the defaults are still production. What needs its own
+// check is that the options BITE when the harness sets them: a seam that quietly did nothing
+// would have the calibration reporting a gap the condenser never made.
+void test_calibration_seam_defaults_to_production_and_bites_when_set() {
+    std::string log = big_log(200, "collecting");
+    log += "Traceback (most recent call last):\n";
+    log += "  File \"/x/boom.py\", line 3, in <module>\n";
+    log += big_log(200, "teardown");
+
+    const auto shipped = cml::condense(log, "/tmp/s.txt");
+    ok(shipped.text == cml::condense(log, "/tmp/s.txt", {}).text,
+       "an explicitly defaulted CondenseOpts is byte-identical to the production call");
+
+    ok(shipped.text.find("boom.py") != std::string::npos, "the drag keeps the frame");
+    ok(cml::condense(log, "/tmp/s.txt", {.drags = false}).text.find("boom.py") == std::string::npos,
+       "drags=false really is the pre-rule baseline, or the gap it measures is fiction");
+
+    const auto needles = cml::flag_needles();
+    std::size_t tb = needles.size();
+    for (std::size_t i = 0; i < needles.size(); ++i)
+        if (needles[i] == "traceback") tb = i;
+    ok(tb < needles.size(), "the harness resolves a needle by name — never a hardcoded index");
+    ok(shipped.flagged == 1 && cml::condense(log, "/tmp/s.txt", {.skip_needle = tb}).flagged == 0,
+       "and skipping one needle removes exactly that needle's matches");
+}
+
 }  // namespace
 
 void suite_offload() {
@@ -200,6 +227,7 @@ void suite_offload() {
     test_gcc_instantiation_chain_names_the_users_file();
     test_failure_on_the_first_line_keeps_its_body();
     test_grew_path_reports_no_stale_counts();
+    test_calibration_seam_defaults_to_production_and_bites_when_set();
 }
 
 }  // namespace cml_test

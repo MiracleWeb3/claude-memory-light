@@ -197,6 +197,13 @@ Both halves are gated on a measured number, not on shipping.
   not a selftest, not a synthetic transcript. Target: **Bash results >= 2 KB shrink by at
   least half**, which on the measured distribution is ~11% of all tool bytes.
 
+  **Measured before wiring: 48.2%** over 1,046 real Bash results (4.17 MB -> 2.16 MB), so the
+  target is missed by 1.8 points — ~10.5% of all tool bytes rather than ~11%. The prediction
+  of what a half would be worth was sound; the half is what the rules do not reach. See
+  Calibration below for the curve, and for the 53.0% that is available with the drag passes
+  off at 38% leave-one-out survival. Whether that trade is worth taking is a decision, not a
+  knob to turn until the number clears.
+
   That is the honest ceiling for v1 and it is well short of the 61% headline that motivated
   this — most of which came from their layering, and most of the rest of the reachable bytes
   here sit in `Read`, which is deliberately out of scope. A target set against the whole
@@ -214,11 +221,42 @@ rubric minted 80% and was killed two minutes in. Same discipline applies twice h
 - **Scene rubric:** calibrate on 20 sessions before running all 75. A scene summary that reads
   as a status report ("worked on the parser") is the failure mode to catch, and it is
   exactly what the durability gate found the judge doing at low strictness.
-- **Condenser:** run over the 2,438 real results >= 2 KB already on disk and diff the
-  condensed form against the original **before** it is ever wired to the hook. The question
-  is not "does it shrink" but "does the kept text still contain the error." Measure the
-  fraction of results whose error lines survive; anything below 100% is a bug in the rule,
-  not an acceptable rate.
+- **Condenser: measured, and it misses the gate.** Run over the real results already on disk
+  **before** it is ever wired to the hook — `cpp/tools/calibrate-offload.cpp`, 1,046 Bash
+  results >= 2 KB, 4.17 MB. (Not 2,438: that count is every tool, and 1,059 of those are
+  `Read`, which `condensable()` never accepts.)
+
+  The first gate here was "count error lines before and after; anything below 100% is a bug."
+  That gate is a **tautology** — every needle match is kept unconditionally, so it reads 100%
+  for every possible input. Measured: a sabotaged condenser keeping *only* needle lines and
+  discarding every traceback body scored 92.3% saved / 0 lost, beating the real one's 44.4%.
+  It is replaced by two numbers the needle list cannot produce about itself:
+
+  **Leave-one-needle-out.** For needle *k*, take the lines matching *k* and no other needle —
+  their survival depends entirely on *k* — then condense with *k* disabled and count how many
+  survive on head/tail and the drag passes. That is a diagnostic line the needle list cannot
+  see, simulated 31 ways over real data, and it moves when the rules move.
+
+  **Per-file differential.** Condense the corpus with two builds and sort by byte delta. A
+  global rate cannot move on a 9-in-1,046 regression; this shows it in a two-minute read.
+
+  | | bytes saved | leave-one-out survival |
+  |:--|--:|--:|
+  | both drag passes off | **53.0%** | 38.0% |
+  | downward drag only (`kDragUp = 0`) | 49.4% | 48.3% |
+  | **shipped, `kDragUp = 1`** | **48.2%** | **53.3%** |
+  | `kDragUp = 6` (the unevidenced original) | 44.4% | 59.4% |
+  | `kDragUp = 12` | 41.9% | 62.6% |
+
+  Both curves are monotone and **opposed**, so no depth clears both gates: bytes >= 50% needs
+  the drag rules off, survival >= 70% is unreachable at any depth. The rules are what costs
+  the byte gate — 4.8 points — and what buys 15 points of survival. `kDragUp = 1` is the knee:
+  1.2 points of bytes for 5.0 of survival, where every later step buys 1-2.
+
+  Read the survival figure with its population in view. The 70% bar was set against a looser
+  one — *any* line matching *k*, of which 798 of 2,678 also match another needle and are kept
+  unconditionally whatever *k* does. On that population the same binary reads 67.2% at depth 1
+  and 71.5% at depth 6, and 29.8% of it is the free pass the killed gate was made of.
 
 ## Risks
 

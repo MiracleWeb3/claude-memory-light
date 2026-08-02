@@ -43,9 +43,9 @@ std::string plural(std::size_t n, std::string_view noun) {
     return std::to_string(n) + " " + std::string(noun) + (n == 1 ? "" : "s");
 }
 
-bool has_any(const std::string& folded, const std::string_view* needles, std::size_t n) {
-    for (std::size_t i = 0; i < n; ++i)
-        if (folded.find(needles[i]) != std::string::npos) return true;
+bool has_any(const std::string& folded, std::size_t skip) {
+    for (std::size_t i = 0; i < std::size(kFlagNeedles); ++i)
+        if (i != skip && folded.find(kFlagNeedles[i]) != std::string::npos) return true;
     return false;
 }
 
@@ -69,7 +69,20 @@ std::vector<std::string_view> split_lines(std::string_view s) {
 // body is indented under line 4 — pretty-printed JSON, `kubectl get -o yaml`, `curl | jq` —
 // never terminated the run and kept the entire file. Measured: a 483-line pretty JSON went
 // from 96% saved to 0% saved, silently, with no test able to see it.
-constexpr std::size_t kDragUp = 6;
+//
+// 1, picked by the corpus — 1,046 real Bash results, tools/calibrate-offload.cpp:
+//
+//   depth   0     1     2     3     4     6     8    12
+//   bytes  49.4  48.2  47.2  46.4  45.6  44.4  43.4  41.9   % saved
+//   surv   48.3  53.3  55.3  57.1  58.0  59.4  60.4  62.6   % leave-one-needle-out
+//
+// Both curves are monotone and opposed, so the depth is a rate, not a threshold — and 0->1 is
+// the knee: 1.2 points of bytes buys 5.0 points of survival, where every later step buys 1-2.
+// The first line above a needle is the diagnosis (`tpl2.cpp:6:14: required from here` sits
+// directly above the error it explains); the sixth is usually another line of the same build
+// log. Task 2's GCC fixture measured the same shape from the other side — depth 1 keeps
+// tpl2.cpp:6 in 3,020 bytes, depth 6 keeps the identical content in 9,930.
+constexpr std::size_t kDragUp = 1;
 
 // An indented line is a continuation of the unindented line above it — that is how tracebacks,
 // GCC carets, gtest expectations and pytest assertions all print. Keeping a flagged line
@@ -91,7 +104,11 @@ bool condensable(std::string_view tool_name, std::size_t bytes) {
     return tool_name == "Bash";
 }
 
-Condensed condense(std::string_view out, std::string_view spill_path) {
+std::span<const std::string_view> flag_needles() {
+    return {kFlagNeedles, std::size(kFlagNeedles)};
+}
+
+Condensed condense(std::string_view out, std::string_view spill_path, CondenseOpts o) {
     Condensed c;
     const auto lines = split_lines(out);
     const std::size_t n = lines.size();
@@ -99,7 +116,7 @@ Condensed condense(std::string_view out, std::string_view spill_path) {
     std::vector<bool> keep(n, false), seed(n, false);
     for (std::size_t i = 0; i < n; ++i) {
         if (i < kHead || i + kTail >= n) keep[i] = true;
-        if (has_any(fold(lines[i]), kFlagNeedles, std::size(kFlagNeedles))) {
+        if (has_any(fold(lines[i]), o.skip_needle)) {
             keep[i] = true;
             seed[i] = true;  // ONLY a needle match seeds a drag — never a head/tail edge
             ++c.flagged;
@@ -119,7 +136,10 @@ Condensed condense(std::string_view out, std::string_view spill_path) {
     // 0-3 could not reach past index 4, and a combined stdout+stderr capture puts the failure
     // on line 0 routinely. Measured: a 40-line candidate list under an `error:` on line 0
     // survived 4 of 40.
-    for (std::size_t i = 0; i + 1 < n; ++i) {
+    //
+    // `o.drags` gates this pass and the upward one below. It is false only in the calibration
+    // harness, to measure what head/tail alone would have kept.
+    for (std::size_t i = 0; o.drags && i + 1 < n; ++i) {
         if (seed[i] && indented(lines[i + 1])) {
             keep[i + 1] = true;
             seed[i + 1] = true;
@@ -129,7 +149,7 @@ Condensed condense(std::string_view out, std::string_view spill_path) {
     // column 0, so neither the needles nor the downward rule can reach it —
     // `tpl2.cpp:6:14:   required from here` is the line naming the file the user owns, and
     // without it the surviving `error:` lines all point into /usr/include/c++/13.
-    for (std::size_t i = 0; i < n; ++i) {
+    for (std::size_t i = 0; o.drags && i < n; ++i) {
         if (!seed[i]) continue;
         for (std::size_t k = 1; k <= kDragUp && k <= i; ++k) {
             if (lines[i - k].empty()) break;  // a blank line ends the block

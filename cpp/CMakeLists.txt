@@ -128,6 +128,12 @@ if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
     VERBATIM)
 endif()
 
+# Not shipped in `cml`: the condenser measured against a corpus of real tool results, by hand,
+# before it is trusted with one. Built here rather than left as a loose file so it keeps
+# compiling against offload.hpp as that header moves.
+add_executable(cml_calibrate_offload tools/calibrate-offload.cpp)
+target_link_libraries(cml_calibrate_offload PRIVATE cml_core)
+
 # One runnable check, no framework: asserts that fail loudly on a broken filter.
 add_executable(cml_selftest
   src/selftest.cpp

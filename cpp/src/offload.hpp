@@ -10,6 +10,8 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
+#include <span>
 #include <string>
 #include <string_view>
 
@@ -29,9 +31,23 @@ struct Condensed {
 // Claude Code version is never silently condensed.
 bool condensable(std::string_view tool_name, std::size_t bytes);
 
+// Calibration only. Production calls condense(out, spill) and gets these defaults, so the
+// measured binary and the shipped one are the same code path — a number measured through
+// this seam is a number about production. Leave-one-needle-out needs a needle switched off;
+// the drag-rule baseline needs both passes off.
+struct CondenseOpts {
+    std::size_t skip_needle = SIZE_MAX;  // pretend this needle does not exist
+    bool drags = true;                   // false = head/tail only, the pre-rule baseline
+};
+
 // Pure. `spill_path` is named in the replacement so the original stays reachable;
 // pass empty to omit the pointer.
-Condensed condense(std::string_view out, std::string_view spill_path);
+Condensed condense(std::string_view out, std::string_view spill_path, CondenseOpts o = {});
+
+// The shipped needle list, exposed because `skip_needle` is an index into THIS array and
+// the harness has to agree with it. A second copy over in the harness would drift and then
+// measure a condenser that is not the one shipping.
+std::span<const std::string_view> flag_needles();
 
 // The hook entry: reads PostToolUse JSON on stdin, writes hook JSON on stdout.
 void offload();
