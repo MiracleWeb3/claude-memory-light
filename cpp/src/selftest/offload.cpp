@@ -124,6 +124,50 @@ void test_a_successful_listing_is_not_reported_as_errors() {
     ok(c.text.find(" errors") == std::string::npos, "and does not claim errors at all");
 }
 
+// N1. The drag used to be seeded from ANY kept line, so line 4 is kept as a head edge, an
+// indented body hangs off it, and the run swallows the whole file. Measured on a 483-line
+// pretty JSON: 96% saved became 0% saved, silently — and no test in this suite could see it,
+// which is the actual defect. Pretty JSON, `kubectl get -o yaml` and `curl | jq` are the
+// commonest large Bash results there are.
+void test_indented_body_still_condenses() {
+    std::string log = "{\n";
+    for (int i = 0; i < 400; ++i)
+        log += "    \"key" + std::to_string(i) + "\": " + std::to_string(i) + ",\n";
+    log += "}\n";
+    const auto c = cml::condense(log, "/tmp/s.txt");
+    ok(!c.grew, "an all-indented body is still condensed, not handed back whole");
+    ok(c.text.size() < log.size() / 4, "and by a lot");
+}
+
+// GCC prints its instantiation chain ABOVE the error line and at column 0, so neither the
+// needles nor the downward indent rule can reach it. Without the bounded upward pass, every
+// surviving `error:` line points into /usr/include/c++/13 and the file the user owns — the
+// only line in the block they can act on — greps zero.
+void test_gcc_instantiation_chain_names_the_users_file() {
+    std::string log = big_log(60, "[..] Building CXX object CMakeFiles/app.dir/src/mod");
+    log += "/usr/include/c++/13/bits/predefined_ops.h: In instantiation of 'bool _Iter_less()'\n";
+    log += "/usr/include/c++/13/bits/stl_algo.h:1819:14:   required from 'void __insertion_sort()'\n";
+    log += "tpl2.cpp:6:14:   required from here\n";
+    log += "/usr/include/c++/13/bits/predefined_ops.h:45:23: error: no match for 'operator<'\n";
+    log += big_log(60, "[..] Building CXX object CMakeFiles/app.dir/src/mod");
+    const auto c = cml::condense(log, "/tmp/s.txt");
+    ok(c.text.find("tpl2.cpp:6") != std::string::npos,
+       "the line naming the file the user owns survives, not just the system-header error");
+    ok(c.text.find("error: no match for 'operator<'") != std::string::npos,
+       "along with the error it belongs to");
+}
+
+// N2. `elided` was reset on the grew path and `flagged` was not, so a Condensed documented
+// as "the untouched original" carried a count from the pass that was discarded.
+void test_grew_path_reports_no_stale_counts() {
+    std::string small = "error: something broke\n";
+    small += std::string(4000, 'y') + "\n";
+    const auto c = cml::condense(small, "/tmp/s.txt");
+    ok(c.grew, "two lines can only grow under a header");
+    ok(c.text == small, "so the original comes back untouched");
+    ok(c.flagged == 0, "carrying no count from the pass that was thrown away");
+}
+
 }  // namespace
 
 void suite_offload() {
@@ -136,6 +180,9 @@ void suite_offload() {
     test_spill_path_is_named_in_the_output();
     test_warnings_are_kept_not_merely_counted();
     test_a_successful_listing_is_not_reported_as_errors();
+    test_indented_body_still_condenses();
+    test_gcc_instantiation_chain_names_the_users_file();
+    test_grew_path_reports_no_stale_counts();
 }
 
 }  // namespace cml_test

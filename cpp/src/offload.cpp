@@ -64,6 +64,13 @@ std::vector<std::string_view> split_lines(std::string_view s) {
     return out;
 }
 
+// How far a flagged line may drag its context, in either direction. Unbounded is not an
+// option: the first version seeded the downward drag from ANY kept line, so an output whose
+// body is indented under line 4 — pretty-printed JSON, `kubectl get -o yaml`, `curl | jq` —
+// never terminated the run and kept the entire file. Measured: a 483-line pretty JSON went
+// from 96% saved to 0% saved, silently, with no test able to see it.
+constexpr std::size_t kDragUp = 6;
+
 // An indented line is a continuation of the unindented line above it — that is how tracebacks,
 // GCC carets, gtest expectations and pytest assertions all print. Keeping a flagged line
 // without its indented run keeps the fact that something failed and throws away where.
@@ -89,19 +96,38 @@ Condensed condense(std::string_view out, std::string_view spill_path) {
     const auto lines = split_lines(out);
     const std::size_t n = lines.size();
 
-    std::vector<bool> keep(n, false);
+    std::vector<bool> keep(n, false), seed(n, false);
     for (std::size_t i = 0; i < n; ++i) {
         if (i < kHead || i + kTail >= n) keep[i] = true;
         if (has_any(fold(lines[i]), kFlagNeedles, std::size(kFlagNeedles))) {
             keep[i] = true;
+            seed[i] = true;  // ONLY a needle match seeds a drag — never a head/tail edge
             ++c.flagged;
         }
     }
-    // Continuation pass, after flagging: a kept line drags the contiguous indented run
-    // beneath it. Measured on a real pytest traceback this recovers 8 frames of 8; on a GCC
-    // diagnostic it recovers the caret and source-snippet lines that name the actual file.
+    // Downward pass: a flagged line drags the contiguous indented run beneath it. Measured
+    // on a real pytest traceback this recovers 8 frames of 8 — no `File "..."` line matches
+    // any needle, so this rule is doing all the work there, not refining it.
+    //
+    // Seeded from `seed`, not from `keep`. Seeding from any kept line is the N1 regression:
+    // line 4 is kept as a head edge, an indented body hangs off it, and the run swallows the
+    // file. Propagating `seed[i+1]` is what carries the drag down a multi-line run.
     for (std::size_t i = 0; i + 1 < n; ++i) {
-        if (keep[i] && !keep[i + 1] && indented(lines[i + 1])) keep[i + 1] = true;
+        if (seed[i] && !keep[i + 1] && indented(lines[i + 1])) {
+            keep[i + 1] = true;
+            seed[i + 1] = true;
+        }
+    }
+    // Upward pass, bounded: GCC prints its instantiation chain ABOVE the error line and at
+    // column 0, so neither the needles nor the downward rule can reach it —
+    // `tpl2.cpp:6:14:   required from here` is the line naming the file the user owns, and
+    // without it the surviving `error:` lines all point into /usr/include/c++/13.
+    for (std::size_t i = 0; i < n; ++i) {
+        if (!seed[i]) continue;
+        for (std::size_t k = 1; k <= kDragUp && k <= i; ++k) {
+            if (lines[i - k].empty()) break;  // a blank line ends the block
+            keep[i - k] = true;
+        }
     }
 
     std::string text;
@@ -138,6 +164,7 @@ Condensed condense(std::string_view out, std::string_view spill_path) {
     if (c.text.size() >= out.size()) {
         c.text.assign(out);
         c.elided = 0;
+        c.flagged = 0;  // the pass that produced it was thrown away; do not report its count
         c.grew = true;
     }
     return c;
