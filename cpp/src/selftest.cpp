@@ -14,6 +14,7 @@ int main() {
     cml_test::suite_encoder();
     cml_test::suite_offload();
     cml_test::suite_offload_hook();
+    cml_test::suite_scene();
     std::printf("all %d checks passed\n", cml_test::checks);
     return 0;
 }

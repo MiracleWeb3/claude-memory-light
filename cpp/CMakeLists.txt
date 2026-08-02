@@ -149,6 +149,7 @@ add_executable(cml_selftest
   src/selftest/encodermodel.cpp
   src/selftest/offload.cpp
   src/selftest/offloadhook.cpp
+  src/selftest/scene.cpp
 )
 # The hook suite drives the real binary, so it needs one to exist beside it.
 add_dependencies(cml_selftest cml)

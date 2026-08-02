@@ -154,7 +154,17 @@ Db open_db() {
         // populations, two tables, two sets of statistics, no interference.
         "CREATE VIRTUAL TABLE IF NOT EXISTS work USING fts5("
         "    text, role UNINDEXED, project UNINDEXED, session UNINDEXED,"
-        "    ts UNINDEXED, file UNINDEXED, tokenize='porter unicode61');");
+        "    ts UNINDEXED, file UNINDEXED, tokenize='porter unicode61');"
+        // L2: one row per session worth summarising. FTS5-only, like `mem` and `work` —
+        // nothing in this schema keeps a real table in sync with an index, and there are
+        // no triggers, so a mirror would only be a second thing to get wrong. The lost
+        // PRIMARY KEY costs nothing: build_scenes skips sessions already in here.
+        // Additive — the destructive path above keys on `mem`'s column list and cannot be
+        // tripped by adding a table, exactly as `hints` and `recalled` were added.
+        "CREATE VIRTUAL TABLE IF NOT EXISTS scene USING fts5("
+        "    title, summary, outcome, session UNINDEXED, project UNINDEXED,"
+        "    ts_start UNINDEXED, ts_end UNINDEXED, n_rows UNINDEXED,"
+        "    tokenize='porter unicode61');");
     if (!ok) return Db{};
     return db;
 }

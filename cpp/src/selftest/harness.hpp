@@ -25,5 +25,6 @@ void suite_ports();      // hook subcommands: chronic loops, prompt hints, recal
 void suite_encoder();    // transformer kernels; semantic checks skip without the model
 void suite_offload();       // tool-output condenser: allowlist, floor, what survives
 void suite_offload_hook();  // the PostToolUse entry, driven through the real binary
+void suite_scene();         // the L2 scene table — opens a db, under a temp $CML_HOME
 
 }  // namespace cml_test
