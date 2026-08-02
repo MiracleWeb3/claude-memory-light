@@ -116,10 +116,16 @@ target_link_libraries(cml PRIVATE cml_core)
 # executing the previous one — which is how a fixed bug stayed live for a day while the
 # repo said otherwise. Refresh an install that already exists; never create one, so a
 # fresh clone of this repo does not quietly write into somebody's ~/.claude.
-add_custom_command(TARGET cml POST_BUILD
-  COMMAND "${CMAKE_COMMAND}" "-DCML_BIN=$<TARGET_FILE:cml>"
-          -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/refresh-install.cmake"
-  VERBATIM)
+#
+# Release only. Debug is the sanitizer build (see above), and installing that would put
+# an ASan-instrumented binary on the Stop hook of every turn — slower, and dead on any
+# machine without the ASan runtime. A debugging session must not change what runs.
+if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
+  add_custom_command(TARGET cml POST_BUILD
+    COMMAND "${CMAKE_COMMAND}" "-DCML_BIN=$<TARGET_FILE:cml>"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/refresh-install.cmake"
+    VERBATIM)
+endif()
 
 # One runnable check, no framework: asserts that fail loudly on a broken filter.
 add_executable(cml_selftest
