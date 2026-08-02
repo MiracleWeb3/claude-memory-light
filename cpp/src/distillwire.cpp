@@ -1,6 +1,8 @@
 #include "distillwire.hpp"
 
 #include <fcntl.h>
+
+#include <cstdlib>
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -86,7 +88,12 @@ std::optional<std::vector<Verdict>> judge_batch(
             return std::nullopt;
         }
     }
-    std::string out = run_capture({"curl", "-s", "--max-time", "90", "--config",
+    // 90s was fine for an interactive `cml distill`; it is not fine on the Stop hook,
+    // where two of these stacked into a 3m24s turn on 2026-08-02. index_all sets
+    // CML_HTTP_TIMEOUT to whatever is left of its budget.
+    const char* tmo_env = std::getenv("CML_HTTP_TIMEOUT");
+    const std::string tmo = (tmo_env && std::atoi(tmo_env) > 0) ? tmo_env : "90";
+    std::string out = run_capture({"curl", "-s", "--max-time", tmo, "--config",
                                    cfg.string(), "-H", "Content-Type: application/json", "-d",
                                    "@" + tmp.string(), url});
     std::error_code ec;

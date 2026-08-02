@@ -5,8 +5,10 @@
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <tuple>
 #include <unordered_set>
 
+#include "budget.hpp"
 #include "curate.hpp"
 #include "curatorprompts.hpp"
 #include "db.hpp"
@@ -111,7 +113,7 @@ struct Counts {
     std::size_t rows = 0;
 };
 
-Counts index_transcripts(Db& db, bool force) {
+Counts index_transcripts(Db& db, bool force, const Budget& budget) {
     Counts total;
     const auto blocked = forgotten_set(db);
     const fs::path projects = home() / ".claude/projects";
@@ -126,6 +128,7 @@ Counts index_transcripts(Db& db, bool force) {
         std::error_code inner;
         for (const auto& f : fs::directory_iterator(pdir.path(), inner)) {
             const fs::path path = f.path();
+            if (budget.spent()) return total;  // resumable: files commit individually
             if (path.extension() != ".jsonl") continue;
             FileMeta fm;
             if (!meta_of(path, fm)) continue;
@@ -243,7 +246,8 @@ int index_all(bool force) {
         return 1;
     }
 
-    const Counts t = index_transcripts(db, force);
+    const Budget budget(index_budget_ms());
+    const Counts t = index_transcripts(db, force, budget);
     Counts m;
     std::error_code ec;
     const fs::path projects = home() / ".claude/projects";
@@ -262,14 +266,19 @@ int index_all(bool force) {
     // without this the vector table would fall permanently behind the FTS index and
     // hybrid search would quietly lose recall on everything recent. No-ops unless
     // `cml embed` has already created the table.
-    const std::size_t embedded = embed_new(db);
+    const std::size_t embedded = budget.spent() ? 0 : embed_new(db);
 
     // Automatic curation: judge new rows when a curator key is configured, capped so
     // the Stop hook stays quick — the backlog drains over turns, or via `cml distill`.
     std::string curated;
-    if (const auto key = llm_key()) {
+    if (const auto key = llm_key(); key && !budget.spent()) {
+        setenv("CML_HTTP_TIMEOUT", std::to_string(budget.seconds_left()).c_str(), 1);
         auto [kept, dropped] = distill_new(db, *key, 40, false, Rubric::Assistant);
-        const auto [ukept, udropped] = distill_new(db, *key, 40, false, Rubric::User);
+        auto ukept = std::size_t{0}, udropped = std::size_t{0};
+        if (!budget.spent()) {
+            setenv("CML_HTTP_TIMEOUT", std::to_string(budget.seconds_left()).c_str(), 1);
+            std::tie(ukept, udropped) = distill_new(db, *key, 40, false, Rubric::User);
+        }
         kept += ukept;
         dropped += udropped;
         if (kept + dropped > 0) {
