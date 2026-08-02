@@ -33,7 +33,7 @@ int usage() {
     std::printf(
         "cml: index [--all] | search <terms> [--project P] [--role R] [--limit N]\n"
         "     [--semantic|--keyword] | forget <rowid...> | forget --match \"<q>\" [--yes]\n"
-        "     | distill [--all] | embed [--all] | map [--limit N] [--no-open] [--raw]\n"
+        "     | distill [--all] [--limit N] | embed [--all] | map [--limit N] [--no-open] [--raw]\n"
         "     | loops [--days N] [--limit K] | stats | doctor | capture | nudge | hint\n"
         "     | recall | eval [-k N] [--limit N] | state [--project P]\n");
     return 0;

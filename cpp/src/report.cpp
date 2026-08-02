@@ -17,6 +17,7 @@
 #include "db.hpp"
 #include "embed.hpp"
 #include "embedder.hpp"
+#include "indexer/curator.hpp"
 #include "loops.hpp"
 #include "noise.hpp"
 #include "paths.hpp"
@@ -144,7 +145,14 @@ int doctor() {
     // reports it, so a missing line reads as a missing feature.
     {
         Db db = open_db();
+        // `distilled` records a verdict either way — a drop demotes rather than deletes
+        // (see distill.cpp) — so this count is rows JUDGED, not rows kept, and calling it
+        // "judged kept" flattered it by every dropped row. The gist count is the one that
+        // says how much of the judging produced something. `forgotten` is a different
+        // mechanism entirely: only `cml forget` writes it, so a curator run never moves it.
         const std::int64_t judged = db ? db.scalar("SELECT count(*) FROM distilled") : 0;
+        const std::int64_t gists =
+            db ? db.scalar("SELECT count(*) FROM distilled WHERE gist != ''") : 0;
         const std::int64_t forgot = db ? db.scalar("SELECT count(*) FROM forgotten") : 0;
         if (llm_key()) {
             const auto [url, model] = llm_conf();
@@ -154,9 +162,17 @@ int doctor() {
             if (s != std::string::npos) host = host.substr(s + 2);
             const std::size_t e = host.find('/');
             if (e != std::string::npos) host = host.substr(0, e);
-            std::printf("curation        : on (%s @ %s) — %lld judged kept, %lld forgotten\n",
-                        model.c_str(), host.empty() ? "?" : host.c_str(),
-                        static_cast<long long>(judged), static_cast<long long>(forgot));
+            std::printf(
+                "curation        : on (%s @ %s) — %lld rows judged, %lld carry a gist, "
+                "%lld hand-forgotten\n",
+                model.c_str(), host.empty() ? "?" : host.c_str(),
+                static_cast<long long>(judged), static_cast<long long>(gists),
+                static_cast<long long>(forgot));
+            // Curation is detached now, so "on" only means a key exists — it says nothing
+            // about whether the runs work. This line is what the last run actually did.
+            std::string last = idx::curator_last_line();
+            if (last.size() > 160) last = last.substr(0, 157) + "...";
+            if (!last.empty()) std::printf("curator run     : %s\n", last.c_str());
         } else {
             std::printf("curation        : off — put a key in ~/.claude/claude-memory-light/"
                         "llm.key (any OpenAI-compatible provider; CML_LLM_URL / CML_LLM_MODEL "

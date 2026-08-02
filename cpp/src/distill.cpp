@@ -195,17 +195,26 @@ int distill(const std::vector<std::string>& args) {
         std::fprintf(stderr, "cml: cannot open index\n");
         return 1;
     }
-    for (const auto& a : args) {
-        if (a != "--all") continue;
-        db.exec("DELETE FROM distilled");
-        std::printf("re-judging every row from scratch (%d prior verdicts cleared)\n",
-                    sqlite3_changes(db.raw()));
-        break;
+    // --limit exists because the background curator needs a bounded chunk: at ~20s a row
+    // an unbounded run drains the whole backlog in one sitting, which is a long time to
+    // hold the lock and a lot of balance spent at once. It was accepted and silently
+    // ignored until 2026-08-02 — the spawn in indexer/curator.hpp had been passing it all
+    // along while every run drained everything.
+    std::optional<std::size_t> cap;
+    for (std::size_t i = 0; i < args.size(); ++i) {
+        if (args[i] == "--all") {
+            db.exec("DELETE FROM distilled");
+            std::printf("re-judging every row from scratch (%d prior verdicts cleared)\n",
+                        sqlite3_changes(db.raw()));
+        } else if (args[i] == "--limit" && i + 1 < args.size()) {
+            const long v = std::strtol(args[i + 1].c_str(), nullptr, 10);
+            if (v > 0) cap = static_cast<std::size_t>(v);
+        }
     }
     // Wall clock, not CPU: nearly all of it is spent waiting on the endpoint.
     const auto t0 = std::chrono::steady_clock::now();
-    auto [kept, dropped] = distill_new(db, *key, std::nullopt, true, Rubric::Assistant);
-    const auto [ukept, udropped] = distill_new(db, *key, std::nullopt, true, Rubric::User);
+    auto [kept, dropped] = distill_new(db, *key, cap, true, Rubric::Assistant);
+    const auto [ukept, udropped] = distill_new(db, *key, cap, true, Rubric::User);
     kept += ukept;
     dropped += udropped;
     const std::chrono::duration<double> secs = std::chrono::steady_clock::now() - t0;

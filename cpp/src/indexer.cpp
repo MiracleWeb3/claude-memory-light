@@ -23,34 +23,44 @@ namespace fs = std::filesystem;
 namespace cml {
 
 int index_all(bool force) {
-    Db db = open_db();
-    if (!db) {
-        std::fprintf(stderr, "cml: cannot open index\n");
-        return 1;
-    }
+    idx::Counts t, m, w;
+    std::size_t embedded = 0;
 
-    const Budget budget(index_budget_ms());
-    const idx::Counts t = idx::index_transcripts(db, force, budget);
-    idx::Counts m;
-    std::error_code ec;
-    const fs::path projects = home() / ".claude/projects";
-    if (fs::is_directory(projects, ec)) {
-        for (const auto& pdir : fs::directory_iterator(projects, ec)) {
-            if (!pdir.is_directory()) continue;
-            const std::string project = project_label(pdir.path().filename().string());
-            const idx::Counts c =
-                idx::index_md_dir(db, pdir.path() / "memory", "memory", project, force);
-            m.files += c.files;
-            m.rows += c.rows;
+    // Scoped so the connection is shut before the curator is forked. SQLite's own
+    // documentation says not to carry an open connection across fork(), and it is right:
+    // while this scope was open around the spawn, every detached curator died on
+    // "cannot open index" and — because its output went to /dev/null — did so in total
+    // silence. The same binary run by hand worked, which is what made it look like a
+    // key problem rather than a lifetime problem.
+    {
+        Db db = open_db();
+        if (!db) {
+            std::fprintf(stderr, "cml: cannot open index\n");
+            return 1;
         }
-    }
-    const idx::Counts w = idx::index_md_dir(db, data_dir() / "wiki", "wiki", "wiki", force);
 
-    // Incremental semantic pass. `cml index` runs from the Stop hook every turn, so
-    // without this the vector table would fall permanently behind the FTS index and
-    // hybrid search would quietly lose recall on everything recent. No-ops unless
-    // `cml embed` has already created the table.
-    const std::size_t embedded = budget.spent() ? 0 : embed_new(db);
+        const Budget budget(index_budget_ms());
+        t = idx::index_transcripts(db, force, budget);
+        std::error_code ec;
+        const fs::path projects = home() / ".claude/projects";
+        if (fs::is_directory(projects, ec)) {
+            for (const auto& pdir : fs::directory_iterator(projects, ec)) {
+                if (!pdir.is_directory()) continue;
+                const std::string project = project_label(pdir.path().filename().string());
+                const idx::Counts c =
+                    idx::index_md_dir(db, pdir.path() / "memory", "memory", project, force);
+                m.files += c.files;
+                m.rows += c.rows;
+            }
+        }
+        w = idx::index_md_dir(db, data_dir() / "wiki", "wiki", "wiki", force);
+
+        // Incremental semantic pass. `cml index` runs from the Stop hook every turn, so
+        // without this the vector table would fall permanently behind the FTS index and
+        // hybrid search would quietly lose recall on everything recent. No-ops unless
+        // `cml embed` has already created the table.
+        embedded = budget.spent() ? 0 : embed_new(db);
+    }
 
     // Curation is started, not waited for. It costs ~20s a row on a reasoning-tier
     // curator (102s for five, measured 2026-08-02), so there is no batch size that fits

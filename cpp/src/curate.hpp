@@ -59,8 +59,9 @@ std::optional<std::vector<Verdict>> parse_verdicts(std::string& response, std::s
 
 // Judges every unjudged row belonging to `rubric` (Assistant covers assistant and
 // summary rows, User covers the developer's own messages). `cap` limits rows per
-// run so the Stop hook stays fast; nullopt drains everything. Returns (kept,
-// dropped). Index-time curation calls this with cap=40, verbose=false.
+// run; nullopt drains everything. Returns (kept, dropped). The only caller is the
+// `distill` command, which the background curator re-execs with --limit — nothing
+// curates on the Stop hook's own clock any more (indexer/curator.hpp).
 std::pair<std::size_t, std::size_t> distill_new(Db& db, const std::string& key,
                                                 std::optional<std::size_t> cap, bool verbose,
                                                 Rubric rubric = Rubric::Assistant);
