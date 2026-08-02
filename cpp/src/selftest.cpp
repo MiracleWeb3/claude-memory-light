@@ -12,6 +12,7 @@ int main() {
     cml_test::suite_map();
     cml_test::suite_ports();
     cml_test::suite_encoder();
+    cml_test::suite_offload();
     std::printf("all %d checks passed\n", cml_test::checks);
     return 0;
 }

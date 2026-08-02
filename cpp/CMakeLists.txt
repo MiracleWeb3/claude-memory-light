@@ -90,6 +90,7 @@ add_library(cml_core STATIC
   src/loops.cpp
   src/hint.cpp
   src/recall.cpp
+  src/offload.cpp
   src/eval.cpp
   src/state.cpp
   src/encoder/safetensors.cpp
@@ -137,6 +138,7 @@ add_executable(cml_selftest
   src/selftest/ports.cpp
   src/selftest/encoder.cpp
   src/selftest/encodermodel.cpp
+  src/selftest/offload.cpp
 )
 target_link_libraries(cml_selftest PRIVATE cml_core)
 enable_testing()
