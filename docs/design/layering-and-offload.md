@@ -11,17 +11,19 @@ What is taken is two design ideas it demonstrates and cml lacks.
 
 ## The problem
 
-**Recall is flat.** `recall.cpp` ranks rows and returns three of them (`kMaxHits = 3`,
-`recall.cpp:41`). Every hit is an independent message. Three rows from one debugging session
+**Recall is flat.** `recall/retrieve.cpp` ranks rows and returns three of them (`kMaxHits = 3`,
+`recall/hook.cpp:21`). Every hit is an independent message. Three rows from one debugging session
 arrive as three unrelated lines, and three rows from three different months arrive looking
-identical to that. Measured: recall@3 is **19.7%** (`cml eval`, 2026-07-28).
+identical to that. Measured: recall@3 is **17.6%** (`cml eval`, 2026-08-03, 312 pairs sampled). The 19.7% this
+spec opened with was 2026-07-28 on a smaller corpus, and is the figure the withdrawn scenes
+gate was set against — see Success criteria.
 
 Against the four layers TencentDB builds, cml has:
 
 | layer | cml today | source |
 |---|---|---|
-| L0 raw | 2,786 `mem` rows + 36,795 `work` rows | indexed |
-| L1 atoms | 178 gists — each from **one** message, capped at 500 chars | `distill.cpp:82` |
+| L0 raw | 2,840 `mem` rows + 37,172 `work` rows | indexed |
+| L1 atoms | 184 gists — each from **one** message, capped at 500 chars | `distill.cpp:82` |
 | L2 scenario | **nothing** | — |
 | L3 persona | `MEMORY.md` / `CLAUDE.md`, hand-written | indexed as `role='memory'` |
 
@@ -39,8 +41,10 @@ transcript files:
 | 5-19 rows | 38 |
 | 20+ rows | 37 |
 
-**205 of 305 sessions hold a single row.** A scene over one message restates that message.
-So scenes are built only for sessions with **>= 5 rows: 75 of them.**
+**210 of 315 sessions hold a single row.** A scene over one message restates that message. So
+scenes are built only for sessions with **>= 5 conversation rows: 76 of them** — the role
+filter matters, since without it `memory` and `wiki` note-file rows admit a 77th session that
+is fragments of `MEMORY.md`.
 
 **Nothing manages in-session context.** cml is entirely a between-sessions tool. Tool output
 enters the context window at full size and stays there until compaction throws it away.
@@ -126,12 +130,17 @@ nothing and reports success. So Bash is the whole reachable win: **35.2% of the 
 or 22.2% of all tool bytes.**
 
 **Condenser — deterministic, zero LLM.** A hook that blocks on a network call stalls every
-tool call in the session. Kept verbatim: lines matching
-`error|fail|panic|Traceback|undefined reference|fatal|warning`, the first 5 lines, the last
-15. Everything else collapses to one line:
+tool call in the session. Kept verbatim: lines matching any of 31 failure needles, the first 5
+lines, the last 15, plus two structural rules — a flagged line drags the contiguous indented
+run beneath it (which is what reaches a traceback frame, since no `File "..."` line contains a
+failure word) and one line above it (GCC prints its instantiation chain there, at column 0).
+Everything else collapses, with a marker at each jump so the text never claims false
+adjacency:
 
 ```
-<cml: 412 lines elided · 0 errors · 38 warnings · full: ~/.claude/claude-memory-light/spill/<session>/<n>.txt>
+⟨cml: 412 lines elided · 38 flagged · full: ~/.claude/claude-memory-light/spill/<session>/<tool_use_id>.txt⟩
+...
+⟨… 64 lines …⟩
 ```
 
 **Lossless, via a spill file — not via `work`.** `work` truncates at `kToolMax = 1200`
@@ -197,7 +206,7 @@ growing it is how a briefing becomes wallpaper. What changes is what fills it:
 3. no scene -> today's path, unchanged
 
 That is progressive disclosure done push-style: the hook picks the depth. A pull-based
-drill-down was rejected for the same reason recall itself is hooked — `recall.cpp:1-7`
+drill-down was rejected for the same reason recall itself is hooked — `recall/retrieve.cpp:4-8`
 records the read half firing 2% of the time when it was the model's decision to make.
 
 L3 needs no work. `role='memory'` rows are already indexed and already reachable, so the
@@ -219,7 +228,7 @@ Both halves are gated on a measured number, not on shipping.
   is unreachable by construction.** Not lowered: withdrawn, and replaced with a measurement of
   what scenes can actually do.
 
-  `retrieve()` reranks a candidate pool hard-capped at `kCandidates = 40` (`recall.cpp:46` →
+  `retrieve()` reranks a candidate pool hard-capped at `kCandidates = 40` (`recall/retrieve.cpp:38` →
   `search.cpp:76`), so `recall@40` is the ceiling of any reordering whatsoever. Measured
   against the live index (2,830 rows, 933 Q-A pairs, 311 sampled):
 
