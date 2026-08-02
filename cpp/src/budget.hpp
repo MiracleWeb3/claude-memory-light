@@ -10,8 +10,12 @@
 
 #include <algorithm>
 #include <chrono>
+#include <filesystem>
+#include <fstream>
 #include <cstdlib>
 #include <string>
+
+#include "paths.hpp"
 
 namespace cml {
 
@@ -41,6 +45,37 @@ inline int index_budget_ms() {
         if (std::string(e) == "0") return 24 * 60 * 60 * 1000;  // effectively unbounded
     }
     return 4000;
+}
+
+
+// A curator that is not answering must not be re-tried on every single turn. The stamp is
+// a file rather than a DB row on purpose: this has to work even when the index is locked
+// or mid-write, and losing it just means one extra attempt.
+inline std::filesystem::path curator_stamp() { return data_dir() / "curator-standdown"; }
+
+inline bool curator_backoff_active() {
+    std::error_code ec;
+    const auto p = curator_stamp();
+    if (!std::filesystem::exists(p, ec)) return false;
+    std::ifstream in(p);
+    long long until = 0;
+    if (!(in >> until)) return false;
+    const auto now = std::chrono::duration_cast<std::chrono::seconds>(
+                         std::chrono::system_clock::now().time_since_epoch()).count();
+    return now < until;
+}
+
+inline void start_curator_backoff(int minutes = 15) {
+    const auto now = std::chrono::duration_cast<std::chrono::seconds>(
+                         std::chrono::system_clock::now().time_since_epoch()).count();
+    std::error_code ec;
+    std::filesystem::create_directories(curator_stamp().parent_path(), ec);
+    std::ofstream(curator_stamp()) << (now + minutes * 60);
+}
+
+inline void clear_curator_backoff() {
+    std::error_code ec;
+    std::filesystem::remove(curator_stamp(), ec);
 }
 
 }  // namespace cml

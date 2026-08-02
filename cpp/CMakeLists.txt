@@ -61,6 +61,8 @@ add_library(cml_core STATIC
   src/db.cpp
   src/transcript.cpp
   src/indexer.cpp
+  src/indexer/transcripts.cpp
+  src/indexer/notes.cpp
   src/search.cpp
   src/report.cpp
   src/nudge.cpp

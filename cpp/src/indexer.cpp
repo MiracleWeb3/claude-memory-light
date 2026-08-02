@@ -1,243 +1,27 @@
+// What `cml index` does, in order — and how long it is allowed to take.
+//
+// The scanning itself lives in indexer/: transcripts.cpp has the per-entry judgement,
+// notes.cpp is whole-file. This file is only the sequence and its budget, because the
+// sequence is the part that runs on every Stop hook and therefore has to be bounded.
 #include "indexer.hpp"
 
 #include <cstdio>
+#include <cstdlib>
 #include <filesystem>
-#include <fstream>
-#include <sstream>
 #include <string>
 #include <tuple>
-#include <unordered_set>
 
 #include "budget.hpp"
 #include "curate.hpp"
 #include "curatorprompts.hpp"
 #include "db.hpp"
-#include "noise.hpp"
+#include "indexer/files.hpp"
 #include "paths.hpp"
-#include "transcript.hpp"
-#include "utf8.hpp"
 #include "vec.hpp"
 
 namespace fs = std::filesystem;
 
 namespace cml {
-namespace {
-
-// Signal floor. Short assistant rows are mode-acks. Short user rows ("please",
-// "ok done", "522556") are never how anyone finds anything in a search index, and
-// the assistant reply that follows carries the answer and is kept anyway.
-// ponytail: word count, not semantics — drop to 2 if real messages start vanishing.
-constexpr std::size_t kUserMinWords = 4;
-
-struct FileMeta {
-    std::int64_t size = 0;
-    std::int64_t mtime = 0;
-};
-
-bool meta_of(const fs::path& p, FileMeta& out) {
-    std::error_code ec;
-    if (!fs::is_regular_file(p, ec)) return false;
-    out.size = static_cast<std::int64_t>(fs::file_size(p, ec));
-    if (ec) return false;
-    const auto t = fs::last_write_time(p, ec);
-    if (ec) return false;
-    // file_time_type -> unix seconds, without the C++20 clock_cast some libstdc++
-    // versions still lack.
-    const auto sys = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
-        t - fs::file_time_type::clock::now() + std::chrono::system_clock::now());
-    out.mtime = std::chrono::duration_cast<std::chrono::seconds>(sys.time_since_epoch()).count();
-    return true;
-}
-
-bool unchanged(Db& db, const std::string& path, const FileMeta& fm) {
-    Stmt s(db, "SELECT size, mtime FROM files WHERE path=?1");
-    s.bind(1, path);
-    return s.step() && s.i64(0) == fm.size && s.i64(1) == fm.mtime;
-}
-
-void upsert_file(Db& db, const std::string& path, const FileMeta& fm) {
-    Stmt s(db,
-           "INSERT INTO files(path,size,mtime) VALUES(?1,?2,?3) "
-           "ON CONFLICT(path) DO UPDATE SET size=?2, mtime=?3");
-    s.bind(1, path).bind(2, fm.size).bind(3, fm.mtime);
-    s.run();
-}
-
-void drop_rows_for_file(Db& db, const std::string& path) {
-    {
-        Stmt w(db, "DELETE FROM work WHERE file = ?1");
-        w.bind(1, path);
-        w.run();
-    }
-    // vec_mem only exists once `cml embed` has run; failing here is normal.
-    Stmt v(db, "DELETE FROM vec_mem WHERE rowid IN (SELECT rowid FROM mem WHERE file=?1)");
-    if (v) {
-        v.bind(1, path);
-        v.run();
-    }
-    Stmt m(db, "DELETE FROM mem WHERE file=?1");
-    m.bind(1, path).run();
-}
-
-std::unordered_set<std::string> existing_keys(Db& db) {
-    // Continued sessions leave overlapping rows across two transcript files, so dedup
-    // against everything already indexed (this file's own rows have just been deleted).
-    std::unordered_set<std::string> keys;
-    Stmt s(db, "SELECT session, ts, role, substr(text,1,64) FROM mem");
-    while (s.step()) keys.insert(stable_key(s.text(0), s.text(1), s.text(2), s.text(3)));
-    return keys;
-}
-
-// Rust counts the signal floor on text.trim(); counting untrimmed would let a
-// whitespace-padded stub slip past a floor the Rust binary enforces.
-std::string_view trimmed(std::string_view s) {
-    std::size_t b = 0, e = s.size();
-    while (b < e && std::isspace(static_cast<unsigned char>(s[b]))) ++b;
-    while (e > b && std::isspace(static_cast<unsigned char>(s[e - 1]))) --e;
-    return s.substr(b, e - b);
-}
-
-std::size_t word_count(std::string_view s) {
-    std::size_t n = 0;
-    bool in_word = false;
-    for (const char c : s) {
-        const bool space = std::isspace(static_cast<unsigned char>(c));
-        if (!space && !in_word) ++n;
-        in_word = !space;
-    }
-    return n;
-}
-
-struct Counts {
-    std::size_t files = 0;
-    std::size_t rows = 0;
-};
-
-Counts index_transcripts(Db& db, bool force, const Budget& budget) {
-    Counts total;
-    const auto blocked = forgotten_set(db);
-    const fs::path projects = home() / ".claude/projects";
-    std::error_code ec;
-    if (!fs::is_directory(projects, ec)) return total;
-
-    for (const auto& pdir : fs::directory_iterator(projects, ec)) {
-        if (!pdir.is_directory()) continue;
-        const std::string project = project_label(pdir.path().filename().string());
-
-        // ponytail: top-level session files only; subagent transcripts are skipped.
-        std::error_code inner;
-        for (const auto& f : fs::directory_iterator(pdir.path(), inner)) {
-            const fs::path path = f.path();
-            if (budget.spent()) return total;  // resumable: files commit individually
-            if (path.extension() != ".jsonl") continue;
-            FileMeta fm;
-            if (!meta_of(path, fm)) continue;
-            const std::string pstr = path.string();
-            if (!force && unchanged(db, pstr, fm)) continue;
-
-            const std::string session_fallback = path.stem().string();
-            db.exec("BEGIN");
-            drop_rows_for_file(db, pstr);
-            auto seen = existing_keys(db);
-
-            const auto entries = parse_transcript(pstr, session_fallback);
-            Stmt ins(db,
-                     "INSERT INTO mem(text, role, project, session, ts, file) "
-                     "VALUES(?1,?2,?3,?4,?5,?6)");
-            Stmt wins(db,
-                      "INSERT INTO work(text, role, project, session, ts, file) "
-                      "VALUES(?1,?2,?3,?4,?5,?6)");
-            std::size_t n = 0;
-            for (std::size_t i = 0; i < entries.size(); ++i) {
-                const Entry& e = entries[i];
-                const char* role = nullptr;
-                switch (e.kind) {
-                    case Entry::Kind::Summary: role = "summary"; break;
-                    case Entry::Kind::UserHuman: role = "user"; break;
-                    case Entry::Kind::AssistantText:
-                        if (!turn_final(entries, i)) continue;
-                        role = "assistant";
-                        break;
-                    // The work itself: commands and their output. Short results are
-                    // acknowledgements ("OK", "1 file changed") and carry no search
-                    // surface, so they are dropped the way empty text is.
-                    case Entry::Kind::AssistantTool:
-                    case Entry::Kind::UserTool:
-                        if (e.text.size() < 40) continue;
-                        wins.reset();
-                        wins.bind(1, e.text).bind(2, "tool").bind(3, project)
-                            .bind(4, e.session).bind(5, e.ts).bind(6, pstr);
-                        if (wins.run()) ++total.rows;
-                        continue;
-                    default: continue;
-                }
-                const std::string& text = e.text;
-                if (is_noise(text)) continue;
-
-                const std::size_t len = utf8_len(trimmed(text));
-                const bool assistant = (e.kind == Entry::Kind::AssistantText);
-                if ((assistant && len < 80) || len < 4) continue;
-                if (e.kind == Entry::Kind::UserHuman && word_count(text) < kUserMinWords) continue;
-
-                const std::string ts = (e.kind == Entry::Kind::Summary) ? "" : e.ts;
-                const std::string sid =
-                    (e.kind == Entry::Kind::Summary) ? session_fallback : e.session;
-                const std::string key = stable_key(sid, ts, role, text);
-                if (blocked.count(key)) continue;
-                if (!seen.insert(key).second) continue;
-
-                ins.reset();
-                ins.bind(1, text).bind(2, role).bind(3, project).bind(4, sid).bind(5, ts).bind(6, pstr);
-                if (ins.run()) ++n;
-            }
-            upsert_file(db, pstr, fm);
-            db.exec("COMMIT");
-            ++total.files;
-            total.rows += n;
-        }
-    }
-    return total;
-}
-
-// Whole-file rows for markdown notes (role "memory" or "wiki").
-Counts index_md_dir(Db& db, const fs::path& dir, const char* role, const std::string& project,
-                    bool force) {
-    Counts total;
-    std::error_code ec;
-    if (!fs::is_directory(dir, ec)) return total;
-
-    for (const auto& f : fs::directory_iterator(dir, ec)) {
-        const fs::path path = f.path();
-        if (path.extension() != ".md") continue;
-        FileMeta fm;
-        if (!meta_of(path, fm)) continue;
-        const std::string pstr = path.string();
-        if (!force && unchanged(db, pstr, fm)) continue;
-
-        std::ifstream in(path);
-        if (!in) continue;
-        std::ostringstream buf;
-        buf << in.rdbuf();
-        const std::string text = buf.str();
-
-        db.exec("BEGIN");
-        drop_rows_for_file(db, pstr);
-        if (!text.empty() && text.find_first_not_of(" \t\r\n") != std::string::npos) {
-            Stmt ins(db,
-                     "INSERT INTO mem(text, role, project, session, ts, file) "
-                     "VALUES(?1,?2,?3,?4,?5,?6)");
-            ins.bind(1, text).bind(2, role).bind(3, project)
-               .bind(4, path.stem().string()).bind(5, iso_date(fm.mtime)).bind(6, pstr);
-            if (ins.run()) ++total.rows;
-        }
-        upsert_file(db, pstr, fm);
-        db.exec("COMMIT");
-        ++total.files;
-    }
-    return total;
-}
-
-}  // namespace
 
 int index_all(bool force) {
     Db db = open_db();
@@ -247,20 +31,21 @@ int index_all(bool force) {
     }
 
     const Budget budget(index_budget_ms());
-    const Counts t = index_transcripts(db, force, budget);
-    Counts m;
+    const idx::Counts t = idx::index_transcripts(db, force, budget);
+    idx::Counts m;
     std::error_code ec;
     const fs::path projects = home() / ".claude/projects";
     if (fs::is_directory(projects, ec)) {
         for (const auto& pdir : fs::directory_iterator(projects, ec)) {
             if (!pdir.is_directory()) continue;
             const std::string project = project_label(pdir.path().filename().string());
-            const Counts c = index_md_dir(db, pdir.path() / "memory", "memory", project, force);
+            const idx::Counts c =
+                idx::index_md_dir(db, pdir.path() / "memory", "memory", project, force);
             m.files += c.files;
             m.rows += c.rows;
         }
     }
-    const Counts w = index_md_dir(db, data_dir() / "wiki", "wiki", "wiki", force);
+    const idx::Counts w = idx::index_md_dir(db, data_dir() / "wiki", "wiki", "wiki", force);
 
     // Incremental semantic pass. `cml index` runs from the Stop hook every turn, so
     // without this the vector table would fall permanently behind the FTS index and
@@ -268,10 +53,21 @@ int index_all(bool force) {
     // `cml embed` has already created the table.
     const std::size_t embedded = budget.spent() ? 0 : embed_new(db);
 
-    // Automatic curation: judge new rows when a curator key is configured, capped so
-    // the Stop hook stays quick — the backlog drains over turns, or via `cml distill`.
+    // Automatic curation: judge new rows when a curator key is configured. Each call
+    // reaches the network, so it is gated on the budget and told how many seconds are
+    // left — see budget.hpp for what happens when that is not done.
+    //
+    // And a curator that is not answering must not tax every turn. Measured 2026-08-02:
+    // with the endpoint reachable but the call not landing, four consecutive index runs
+    // each burned the whole 4s budget and curated 0 rows. Bounded waste is still waste
+    // when it repeats every Stop hook, so a run that spends real time and curates nothing
+    // stands the curator down for a while; the backlog keeps until it is back, or until
+    // `cml distill` is run by hand.
     std::string curated;
-    if (const auto key = llm_key(); key && !budget.spent()) {
+    if (const auto key = llm_key(); key && !budget.spent() && !curator_backoff_active()) {
+        const int left_before = budget.seconds_left();  // a plain snapshot: copying a
+                                                        // Budget shares its end time, so
+                                                        // the delta would always be 0.
         setenv("CML_HTTP_TIMEOUT", std::to_string(budget.seconds_left()).c_str(), 1);
         auto [kept, dropped] = distill_new(db, *key, 40, false, Rubric::Assistant);
         auto ukept = std::size_t{0}, udropped = std::size_t{0};
@@ -284,6 +80,10 @@ int index_all(bool force) {
         if (kept + dropped > 0) {
             curated = ", curated " + std::to_string(kept) + "+" + std::to_string(dropped) +
                       "dropped";
+            clear_curator_backoff();
+        } else if (left_before - budget.seconds_left() >= 1) {
+            start_curator_backoff();
+            curated = ", curator not answering - standing down for 15m";
         }
     }
 
