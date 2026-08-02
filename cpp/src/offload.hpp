@@ -18,8 +18,11 @@ namespace cml {
 struct Condensed {
     std::string text;
     std::size_t elided = 0;
-    std::size_t errors = 0;
-    std::size_t warnings = 0;
+    // "flagged", not "errors": the rule is a substring match, and a successful `npm ls`
+    // listing error-ex@1.3.2 is not three errors. The header states this number to a model
+    // that will reason over it, so it must claim only what it knows — lines worth your eyes.
+    std::size_t flagged = 0;
+    bool grew = false;
 };
 
 // Allowlist, deliberately: an unknown tool is left alone, so a tool added by a future
