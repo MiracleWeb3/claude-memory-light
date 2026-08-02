@@ -94,6 +94,20 @@ Run 2 also settled a question the spec had only hedged: **the replacement is wha
 persisted to the transcript.** The original output is gone from it entirely. The spill file is
 therefore the only surviving copy, not a convenience.
 
+**It only ever sees commands that succeeded.** `PostToolUse` does not fire on a failing Bash call —
+measured live over five commands: `exit 2`, `exit 3`, and an `exit 1` printing to stderr all produced
+no hook at all, while a benign non-zero (`grep` finding nothing) did. Confirmed independently by shape:
+failing results carry `toolUseResult` as a **string**, not the `{stdout, stderr, …}` object, so
+`offload()`'s `tool_response.stdout` lookup would passthrough even if the hook did fire. Of the 1,038
+Bash results >= 2 KB in this machine's history, **zero** are failures; the 504 `is_error` results in the
+corpus are all string-shaped.
+
+So this does not rescue failing builds, and any framing that says it does is wrong. What it does is the
+thing the spec actually set out to do — shrink large tool output — on the population where the bytes
+are. The error rules still earn their place, because succeeding commands print diagnostics constantly:
+across the corpus, 155 results contain `failed`, 50 `warning`, 28 a compiler-style `error:` and 8 a full
+Python traceback, from the `cmd || true`, `2>&1 | tail` and read-a-logfile shapes an agent uses all day.
+
 **Trigger.** Result >= 2 KB **and** `tool_name == "Bash"`. Nothing else, in v1.
 
 Measured over the 146 transcripts, of the 11.60 MB carried by results at or above 2 KB:
