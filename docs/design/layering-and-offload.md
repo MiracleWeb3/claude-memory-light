@@ -258,12 +258,39 @@ Both halves are gated on a measured number, not on shipping.
   off at 38% leave-one-out survival. Whether that trade is worth taking is a decision, not a
   knob to turn until the number clears.
 
-  **The byte gate was passable, and passing it was refused.** With both drag passes disabled
-  the corpus saves **53.0%** — clearing the 50% bar — at **38.0%** leave-one-out survival
-  against depth 1's 53.3%. The two gates are directly opposed: the drag rules are precisely
-  what costs the bytes and precisely what buys the survival. Trading 15 points of diagnostic
-  survival for 4.8 points of bytes inverts the reason the rules exist, so depth 1 ships and
-  the gate stays failed. Depth 0 also deletes the GCC instantiation chain and its selftest.
+  **Corrected 2026-08-03, after review of the harness itself. Both headline numbers moved.**
+
+  *Bytes.* The harness measured with a 12-character placeholder spill path
+  (`/spill/x.txt`); the production path is 79–94 characters, it is written into every
+  condensed result, and its length also feeds the grow guard. At a production-shaped path the
+  corpus saves **46.4%**, not 48.2% — the byte gate is missed by **3.3–3.6 points, not 1.8**,
+  and the all-tool-bytes headline is ~10.5% rather than 10.9%.
+
+  *Survival.* The 53.3% pooled every sole-needle line in the corpus into one rate, and
+  **1,393 of those 1,880 lines (74%) come from files containing no diagnostic at all** — a
+  `missing` in a README, a `failed` in a list of test names, an `error` inside an identifier.
+  A line nobody would miss counted the same as a traceback frame. Stratified:
+
+  | population | files | survival | what the drags buy |
+  |---|--:|--:|--:|
+  | all — what was reported | 1,046 | 53.3% | +15.3 |
+  | files carrying any diagnostic | 90 | **65.5%** | **+27.7** |
+  | files with a traceback / segfault / undefined reference | 10 | **78.5%** | **+43.0** |
+
+  **On the population the feature exists to protect, the condenser is already above the 70%
+  bar.** The gate was declared unreachable against a pool that was three-quarters noise.
+
+  **The byte gate was passable, and passing it was refused — and the review shows the trade is
+  far worse than the pooled number made it look.** With both drag passes disabled the corpus
+  saves **53.0%**, clearing the 50% bar, at 38.0% survival. Pooled, that reads as trading 15
+  points for 4.8. On results actually carrying a diagnostic it is trading **27.7 to 43.0**
+  points — the traceback body, the GCC instantiation chain and the candidate list all stop
+  surviving, which is the N1 and N3 regressions reintroduced deliberately, on the strength of
+  a number that could not see them. Depth 0 also deletes the GCC chain and its selftest.
+
+  So depth 1 ships, and the gate stays recorded as failed on bytes. A separate reading — that
+  the survival gate is met on the population that matters — is the honest one, and it is stated
+  rather than used to quietly declare a pass.
 
   The curve is monotone and opposed with no plateau, and `0 -> 1` is the knee — 1.2 points of
   bytes buys 5.0 of survival, every later step buys 1–2:
