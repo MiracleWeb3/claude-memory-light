@@ -146,6 +146,12 @@ Both halves are gated on a measured number, not on shipping.
 
 - **Scenes:** `cml eval` recall@3 must exceed **19.7%**. If it does not move, the layer is
   decoration and gets deleted rather than defended.
+
+  Measured with scenes as a **re-rank over the same `mem` rowids**, not as a replacement
+  result. `eval.cpp:109` matches `hits[i].rowid` against the answer row; a scene line
+  occupying one of the three slots would cut the matchable slots to two and depress the
+  number whatever the layering did. The scene headline is presentation and is added in
+  `recall()` only after this gate passes.
 - **Offload:** measured tool bytes reaching context, before and after, over real sessions —
   not a selftest, not a synthetic transcript. Target: the >= 2 KB class shrinks by at least
   half, which on the measured distribution is ~31% of all tool bytes.
