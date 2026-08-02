@@ -233,6 +233,26 @@ Both halves are gated on a measured number, not on shipping.
   off at 38% leave-one-out survival. Whether that trade is worth taking is a decision, not a
   knob to turn until the number clears.
 
+  **The byte gate was passable, and passing it was refused.** With both drag passes disabled
+  the corpus saves **53.0%** — clearing the 50% bar — at **38.0%** leave-one-out survival
+  against depth 1's 53.3%. The two gates are directly opposed: the drag rules are precisely
+  what costs the bytes and precisely what buys the survival. Trading 15 points of diagnostic
+  survival for 4.8 points of bytes inverts the reason the rules exist, so depth 1 ships and
+  the gate stays failed. Depth 0 also deletes the GCC instantiation chain and its selftest.
+
+  The curve is monotone and opposed with no plateau, and `0 -> 1` is the knee — 1.2 points of
+  bytes buys 5.0 of survival, every later step buys 1–2:
+
+  | depth | 0 | **1** | 2 | 3 | 4 | 6 | 8 | 12 |
+  |---|--:|--:|--:|--:|--:|--:|--:|--:|
+  | bytes saved | 53.0 | **48.2** | 47.2 | 46.4 | 45.6 | 44.4 | 43.4 | 41.9 |
+  | survival | 38.0 | **53.3** | 55.3 | 57.1 | 58.0 | 59.4 | 60.4 | 62.6 |
+
+  Survival climbs 1–2 points per step, so 70% needs a depth in the tens at ~38% bytes. **The
+  knob cannot satisfy both gates.** Reaching 70% requires changing the needle list or adding a
+  structural rule — the way the indent rule bought its 15 points — not turning this one
+  further.
+
   That is the honest ceiling for v1 and it is well short of the 61% headline that motivated
   this — most of which came from their layering, and most of the rest of the reachable bytes
   here sit in `Read`, which is deliberately out of scope. A target set against the whole
