@@ -141,6 +141,21 @@ writes the untouched original to a spill file before emitting the replacement, a
 path in the symbol line. No schema change, no index bloat, and recovery is `cat` — reachable
 by the model and by hand, needing no new cml subcommand.
 
+**Spill files are the only copy, and nothing prunes them.** Two consequences worth stating
+plainly rather than discovering later:
+
+- **Deleting a spill file is permanent data loss.** The transcript keeps only the condensed
+  form and points at the spill by path, so a stray `rm` on that directory turns every prior
+  condensation into a dangling reference with nothing behind it. It is not a cache.
+- **Growth is unbounded but slow.** Had offload been live for this machine's whole history it
+  would hold 4.17 MB across 1,038 files — roughly 1 MB/month. `cleanupPeriodDays` does not
+  touch this directory, so orphaned spills outlive the transcripts that referenced them.
+
+Not solved here, deliberately: at 1 MB/month a retention policy is speculative work, and the
+wrong one destroys the only copy. What is owed before this grows is visibility — `cml doctor`
+should report the spill directory's size and file count, so the decision is made against a
+number rather than a guess. Recorded as a follow-up, not built.
+
 The recovery pointer is a backstop, not the design. Per the 2%-invocation rule, anything that
 depends on the model choosing to expand it will mostly not happen — so the condenser must
 keep the decision-relevant bytes verbatim in the first place. That is what the error-line
