@@ -9,12 +9,11 @@
 #include <cstdlib>
 #include <filesystem>
 #include <string>
-#include <tuple>
 
 #include "budget.hpp"
 #include "curate.hpp"
-#include "curatorprompts.hpp"
 #include "db.hpp"
+#include "indexer/curator.hpp"
 #include "indexer/files.hpp"
 #include "paths.hpp"
 #include "vec.hpp"
@@ -53,38 +52,15 @@ int index_all(bool force) {
     // `cml embed` has already created the table.
     const std::size_t embedded = budget.spent() ? 0 : embed_new(db);
 
-    // Automatic curation: judge new rows when a curator key is configured. Each call
-    // reaches the network, so it is gated on the budget and told how many seconds are
-    // left — see budget.hpp for what happens when that is not done.
-    //
-    // And a curator that is not answering must not tax every turn. Measured 2026-08-02:
-    // with the endpoint reachable but the call not landing, four consecutive index runs
-    // each burned the whole 4s budget and curated 0 rows. Bounded waste is still waste
-    // when it repeats every Stop hook, so a run that spends real time and curates nothing
-    // stands the curator down for a while; the backlog keeps until it is back, or until
-    // `cml distill` is run by hand.
+    // Curation is started, not waited for. It costs ~20s a row on a reasoning-tier
+    // curator (102s for five, measured 2026-08-02), so there is no batch size that fits
+    // a Stop hook — the previous "call it with whatever budget is left" could only ever
+    // time out and look like a broken key. See indexer/curator.hpp.
     std::string curated;
-    if (const auto key = llm_key(); key && !budget.spent() && !curator_backoff_active()) {
-        const int left_before = budget.seconds_left();  // a plain snapshot: copying a
-                                                        // Budget shares its end time, so
-                                                        // the delta would always be 0.
-        setenv("CML_HTTP_TIMEOUT", std::to_string(budget.seconds_left()).c_str(), 1);
-        auto [kept, dropped] = distill_new(db, *key, 40, false, Rubric::Assistant);
-        auto ukept = std::size_t{0}, udropped = std::size_t{0};
-        if (!budget.spent()) {
-            setenv("CML_HTTP_TIMEOUT", std::to_string(budget.seconds_left()).c_str(), 1);
-            std::tie(ukept, udropped) = distill_new(db, *key, 40, false, Rubric::User);
-        }
-        kept += ukept;
-        dropped += udropped;
-        if (kept + dropped > 0) {
-            curated = ", curated " + std::to_string(kept) + "+" + std::to_string(dropped) +
-                      "dropped";
-            clear_curator_backoff();
-        } else if (left_before - budget.seconds_left() >= 1) {
-            start_curator_backoff();
-            curated = ", curator not answering - standing down for 15m";
-        }
+    // No backlog check: a curator with nothing to judge exits in 13ms, and duplicating
+    // distill's candidate query here would only drift from it.
+    if (llm_key() && idx::spawn_curator()) {
+        curated = ", curating in the background";
     }
 
     std::printf(
