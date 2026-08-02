@@ -1,4 +1,7 @@
 // The condenser: which results it touches, and what survives when it does.
+#include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <string>
 #include "harness.hpp"
 #include "offload.hpp"
@@ -211,6 +214,31 @@ void test_calibration_seam_defaults_to_production_and_bites_when_set() {
        "and skipping one needle removes exactly that needle's matches");
 }
 
+// The spill is the ONLY surviving copy: the replacement is what gets persisted to the
+// transcript, so the original is gone from it entirely. Byte-identity is therefore the
+// contract — a summary of the original is not a recovery path.
+void test_spill_round_trips() {
+    const std::string body = "the original, untouched\nwith two lines\n";
+    const std::string path = cml::spill_write("sess-abc", "toolu_123", body);
+    ok(!path.empty(), "spill returns the path it wrote");
+    std::ifstream in(path);
+    const std::string back((std::istreambuf_iterator<char>(in)),
+                            std::istreambuf_iterator<char>());
+    ok(back == body, "byte-identical — the spill is the recovery path, not a summary");
+    std::filesystem::remove(path);
+}
+
+void test_spill_failure_is_silent() {
+    ok(cml::spill_write("", "toolu_1", "x").empty(),
+       "no session means no spill path, and no exception");
+    // Both components are pasted into a filesystem path and both arrive as JSON on stdin.
+    ok(cml::spill_write("../../etc", "toolu_1", "x").empty(), "a traversing session is refused");
+    const std::string p = cml::spill_write("sess-abc", "../../../tmp/pwned", "x");
+    ok(!p.empty() && p.find("pwned") == std::string::npos,
+       "and a traversing tool_use_id falls back to a plain name rather than escaping");
+    std::filesystem::remove(p);
+}
+
 }  // namespace
 
 void suite_offload() {
@@ -228,6 +256,8 @@ void suite_offload() {
     test_failure_on_the_first_line_keeps_its_body();
     test_grew_path_reports_no_stale_counts();
     test_calibration_seam_defaults_to_production_and_bites_when_set();
+    test_spill_round_trips();
+    test_spill_failure_is_silent();
 }
 
 }  // namespace cml_test

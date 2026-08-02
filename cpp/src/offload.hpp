@@ -44,6 +44,13 @@ struct CondenseOpts {
 // pass empty to omit the pointer.
 Condensed condense(std::string_view out, std::string_view spill_path, CondenseOpts o = {});
 
+// Writes `body` verbatim under the session's spill directory; returns the absolute path, or
+// empty on any failure. Never throws. The condensed replacement is what persists to the
+// transcript — the original is gone from it entirely — so this file is the only surviving
+// copy, and a failed spill must mean no condensation, never a lost turn.
+std::string spill_write(std::string_view session, std::string_view tool_use_id,
+                        std::string_view body);
+
 // The shipped needle list, exposed because `skip_needle` is an index into THIS array and
 // the harness has to agree with it. A second copy over in the harness would drift and then
 // measure a condenser that is not the one shipping.

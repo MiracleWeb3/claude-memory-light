@@ -1,8 +1,12 @@
 #include "offload.hpp"
 
 #include <cctype>
+#include <filesystem>
+#include <fstream>
 #include <string_view>
 #include <vector>
+
+#include "paths.hpp"
 
 namespace cml {
 namespace {
@@ -89,6 +93,13 @@ constexpr std::size_t kDragUp = 1;
 // without its indented run keeps the fact that something failed and throws away where.
 bool indented(std::string_view s) {
     return !s.empty() && (s.front() == ' ' || s.front() == '\t');
+}
+
+// Both spill components are pasted into a filesystem path and both arrive as JSON on
+// stdin, so anything that is not a plain name is refused rather than resolved.
+bool plain_name(std::string_view s) {
+    return !s.empty() && s.find('/') == std::string_view::npos &&
+           s.find("..") == std::string_view::npos;
 }
 
 }  // namespace
@@ -195,6 +206,25 @@ Condensed condense(std::string_view out, std::string_view spill_path, CondenseOp
         c.grew = true;
     }
     return c;
+}
+
+// The original, kept whole. `work` truncates at kToolMax = 1200 (transcript.cpp:61) and that
+// cap is correct for a search index — "a megabyte of source is not a memory". It is wrong for
+// recovery, so recovery gets its own store rather than a looser cap.
+std::string spill_write(std::string_view session, std::string_view tool_use_id,
+                        std::string_view body) {
+    if (!plain_name(session)) return {};
+    std::error_code ec;
+    const auto dir = data_dir() / "spill" / std::string(session);
+    std::filesystem::create_directories(dir, ec);
+    if (ec) return {};
+    const auto path =
+        dir / ((plain_name(tool_use_id) ? std::string(tool_use_id) : "result") + ".txt");
+    std::ofstream out(path, std::ios::binary | std::ios::trunc);
+    if (!out) return {};
+    out.write(body.data(), static_cast<std::streamsize>(body.size()));
+    if (!out) return {};
+    return path.string();
 }
 
 }  // namespace cml
