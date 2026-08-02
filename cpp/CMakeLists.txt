@@ -89,7 +89,9 @@ add_library(cml_core STATIC
   src/curatorprompts.cpp
   src/loops.cpp
   src/hint.cpp
-  src/recall.cpp
+  src/recall/terms.cpp
+  src/recall/retrieve.cpp
+  src/recall/hook.cpp
   src/offload.cpp
   src/offload/hook.cpp
   src/eval.cpp
