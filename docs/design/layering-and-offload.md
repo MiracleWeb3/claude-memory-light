@@ -141,6 +141,11 @@ writes the untouched original to a spill file before emitting the replacement, a
 path in the symbol line. No schema change, no index bloat, and recovery is `cat` — reachable
 by the model and by hand, needing no new cml subcommand.
 
+**It costs 1.7 ms per Bash call.** The hook runs on every one, so the passthrough path is the
+one that matters: measured over 20 invocations at **1.7 ms each**, against 1.4 ms for starting
+the binary and doing nothing. So the work itself is ~0.3 ms, and 87.6% of tool calls never get
+past the 2 KB floor. No daemon, nothing resident — the same shape as the rest of cml.
+
 **Offload changes what cml indexes about itself.** `cml index` reads the transcript, and the
 transcript now holds the condensed form, so `work` rows are built from the replacement rather
 than the original. Since `work` truncates at 1,200 chars anyway, this is mostly an improvement
