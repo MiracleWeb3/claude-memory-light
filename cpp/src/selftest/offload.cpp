@@ -157,6 +157,22 @@ void test_gcc_instantiation_chain_names_the_users_file() {
        "along with the error it belongs to");
 }
 
+// N3. The drag could not cross the head boundary. `!keep[i+1]` read as a redundancy check
+// but doubled as the seed-propagation gate: a line already kept for an unrelated reason never
+// got seeded, so the run stopped there. A needle at index 0-3 therefore lost its body at
+// index 4 — and combined stdout+stderr captures put the failure on line 0 routinely, so this
+// is a common shape, not a corner.
+void test_failure_on_the_first_line_keeps_its_body() {
+    std::string log = "error: no match for 'operator<'\n";
+    for (int i = 0; i < 40; ++i) log += "  candidate " + std::to_string(i) + " rejected\n";
+    log += big_log(200, "compiling");
+    const auto c = cml::condense(log, "/tmp/s.txt");
+    ok(c.text.find("candidate 39") != std::string::npos,
+       "the whole indented body survives a failure on line 0, not just the first four lines");
+    ok(c.text.find("compiling 100") == std::string::npos,
+       "and the drag still stops at the end of the indented run");
+}
+
 // N2. `elided` was reset on the grew path and `flagged` was not, so a Condensed documented
 // as "the untouched original" carried a count from the pass that was discarded.
 void test_grew_path_reports_no_stale_counts() {
@@ -182,6 +198,7 @@ void suite_offload() {
     test_a_successful_listing_is_not_reported_as_errors();
     test_indented_body_still_condenses();
     test_gcc_instantiation_chain_names_the_users_file();
+    test_failure_on_the_first_line_keeps_its_body();
     test_grew_path_reports_no_stale_counts();
 }
 

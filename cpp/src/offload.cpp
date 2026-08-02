@@ -112,8 +112,15 @@ Condensed condense(std::string_view out, std::string_view spill_path) {
     // Seeded from `seed`, not from `keep`. Seeding from any kept line is the N1 regression:
     // line 4 is kept as a head edge, an indented body hangs off it, and the run swallows the
     // file. Propagating `seed[i+1]` is what carries the drag down a multi-line run.
+    //
+    // No `!keep[i+1]` guard. It reads as a harmless redundancy check but doubles as the
+    // propagation gate: a line already kept for an unrelated reason never gets seeded, so the
+    // run stops dead there. The head window is where that always bites — a needle at index
+    // 0-3 could not reach past index 4, and a combined stdout+stderr capture puts the failure
+    // on line 0 routinely. Measured: a 40-line candidate list under an `error:` on line 0
+    // survived 4 of 40.
     for (std::size_t i = 0; i + 1 < n; ++i) {
-        if (seed[i] && !keep[i + 1] && indented(lines[i + 1])) {
+        if (seed[i] && indented(lines[i + 1])) {
             keep[i + 1] = true;
             seed[i + 1] = true;
         }
