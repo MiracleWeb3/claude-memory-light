@@ -1,3 +1,4 @@
+<a name="top"></a>
 <div align="center">
 
 <img src="https://capsule-render.vercel.app/api?type=waving&height=180&color=gradient&customColorList=12&text=claude-memory-light&fontSize=44&fontColor=ffffff&animation=fadeIn&fontAlignY=36&desc=full%20memory%20for%20Claude%20Code&descSize=18&descAlignY=56" width="100%" alt=""/>
@@ -11,17 +12,12 @@
 <br/>
 
 [![build](https://img.shields.io/github/actions/workflow/status/MiracleWeb3/claude-memory-light/release.yml?style=for-the-badge&logo=githubactions&logoColor=white&label=build)](https://github.com/MiracleWeb3/claude-memory-light/actions)
-[![release](https://img.shields.io/badge/release-v2.7.0-ea580c?style=for-the-badge&logo=github)](https://github.com/MiracleWeb3/claude-memory-light/releases)
+[![release](https://img.shields.io/badge/release-v2.9.0-ea580c?style=for-the-badge&logo=github)](https://github.com/MiracleWeb3/claude-memory-light/releases)
 [![license](https://img.shields.io/badge/license-MIT-blue?style=for-the-badge)](LICENSE)
 [![c++20](https://img.shields.io/badge/c%2B%2B-20-00599c?style=for-the-badge&logo=cplusplus)](https://en.cppreference.com/w/cpp/20)
 
-![binary](https://img.shields.io/badge/binary-2.4_MB-success?style=flat-square)
-![llm calls](https://img.shields.io/badge/calls_on_your_Claude_plan-0-success?style=flat-square)
-![daemons](https://img.shields.io/badge/daemons-0-success?style=flat-square)
-![platforms](https://img.shields.io/badge/linux-✓-blue?style=flat-square&logo=linux&logoColor=white)
-![platforms](https://img.shields.io/badge/macos-✓-blue?style=flat-square&logo=apple&logoColor=white)
 
-**[install](#-install)** · **[use](#-use)** · **[recall](#-recall--the-read-half)** · **[the map](#-the-map)** · **[how it works](#-how-it-works)** · **[learning loop](#-the-learning-loop)** · **[wiki](#-the-wiki)** · **[vs claude-mem](#%EF%B8%8F-vs-claude-mem)** · **[cli](#-cli)** · **[faq](#-faq)**
+**[install](#install)** · **[use](#use)** · **[recall](#recall--the-read-half)** · **[the map](#the-map)** · **[how it works](#how-it-works)** · **[learning loop](#the-learning-loop)** · **[wiki](#the-wiki)** · **[vs claude-mem](#vs-claude-mem)** · **[cli](#cli)** · **[faq](#faq)**
 
 </div>
 
@@ -37,25 +33,26 @@
 
 The second hit in the demo below is real. The first thing this tool found on my machine was a conversation I'd forgotten, where Claude and I had already evaluated a memory plugin two weeks earlier and reached the same conclusion. That sold me.
 
-## ✨ features
+## features
 
-|   |   |
-|---|---|
-| 🔍 **full-text search** | every message of every session, BM25 over FTS5, milliseconds; `--semantic` adds local vectors for meaning-only queries |
-| 🎯 **automatic recall** | every prompt queries the index on `UserPromptSubmit` — your own history arrives as context, with no command to remember |
-| 📏 **it ships its own benchmark** | `cml eval` measures recall@k against your real history, no labelling — the only published retrieval number of any Claude Code memory plugin |
-| 🧠 **learning loop** | per-turn signals collected into an inbox, consolidated into memory Claude actually loads |
-| 📖 **personal wiki** | one markdown page per topic, edited in place, Obsidian-compatible, same index |
-| 🌌 **3d memory map** | `cml map` renders your whole memory as an interactive galaxy — one offline HTML file |
-| 🪶 **nothing running** | binary executes on a hook, exits in ms; RAM at rest is zero |
-| 🔒 **local only** | one SQLite file you own; nothing leaves your machine |
-| 🧩 **graph companion** | `cml doctor` auto-detects graphify for code-structure maps |
-| 🧭 **session briefing** | SessionStart nudge adds open loops and a wiki topic menu, capped and size-metered, skipped on resume/compact |
-| 🔂 **chronic loops** | `cml loops` surfaces asks that keep recurring across sessions, unresolved |
-| ⚖️ **durability gate** | keeping and plotting are separate decisions — the map holds a few hundred hard-won facts, not every true sentence |
-| 💡 **prompt hints** | zero-token classifier flags a prompt as correction / preference / decision / method / reference, once per session each |
+**Search everything, instantly.** Every message of every session, BM25 over FTS5, in milliseconds. `--semantic` adds local vectors for meaning-only queries, so asking about "trackpad dragging" finds the touchpad rows.
 
-## 🚀 install
+**Retrieval you don't have to remember.** Every prompt queries the index on `UserPromptSubmit`. Your own history arrives as context before Claude answers. There is no command to forget to run.
+
+**A published retrieval number.** `cml eval` measures recall@k against your real history, no labelling required. As far as I can tell it is the only such figure any Claude Code memory plugin publishes.
+
+Around those three:
+
+- a **learning loop** that collects per-turn signals and folds them into memory Claude actually loads
+- a **wiki** of markdown pages, one topic each, Obsidian opens the folder as a vault
+- a **3D map** of the whole thing, one offline HTML file (`cml map`)
+- **chronic loops** (`cml loops`), the asks that keep coming back unresolved
+- **prompt hints** that flag a message as a correction, preference, or decision worth keeping
+- a **durability gate**, so the map holds a few hundred hard-won facts instead of every true sentence
+
+Nothing runs in the background. The binary executes on a hook and exits in milliseconds; RAM at rest is zero. One SQLite file, on your machine, that never leaves it.
+
+## install
 
 ```
 /plugin marketplace add MiracleWeb3/claude-memory-light
@@ -72,7 +69,7 @@ cml doctor        # sanity check
 > [!WARNING]
 > Claude Code deletes transcripts after about 30 days by default. Set `"cleanupPeriodDays": 3650` in `~/.claude/settings.json` or your memory has an expiry date.
 
-## 🔭 use
+## use
 
 ```bash
 cml search "wireguard cyprus"                # across ALL sessions, memory notes, wiki
@@ -89,7 +86,7 @@ Three bundled skills teach Claude to search memory before re-solving old problem
 > [!TIP]
 > No hits doesn't mean not found. Try a second and third keyword set: synonyms, error text, filenames. The skill teaches Claude to do exactly that before giving up.
 
-## 🪐 how it works
+## how it works
 
 Everything orbits one SQLite file. Sources feed it, hooks keep it fresh, search beams out of it.
 
@@ -114,9 +111,18 @@ Transcripts stay where Claude Code puts them. `cml` never moves or modifies them
 
 </details>
 
-## 🎯 recall — the read half
+## recall — the read half
 
-Capture was hooked from the first commit. Retrieval never was, and that asymmetry is the whole story. Measured across 564 transcripts on the machine this was built on: the write side ran **625 times** (`index` 321, `capture` 304), the read side ran **20** — `cml search`, in 12 sessions, **2%**. The index was in good shape and almost nobody read it, because reading it was a decision the model had to remember to make, and a decision made 2% of the time is indistinguishable from a feature that does not exist.
+Capture was hooked from the first commit. Retrieval never was, and that asymmetry is the whole story.
+
+Measured across 564 transcripts on the machine this was built on:
+
+```
+write side (hooked)      625 runs
+read side  (not hooked)   20 runs, in 12 sessions — 2%
+```
+
+The index was in good shape and almost nobody read it. Reading it was a decision the model had to remember to make, and a decision made 2% of the time is indistinguishable from a feature that does not exist.
 
 So `cml recall` runs on `UserPromptSubmit` and the model is not consulted. Every prompt queries the index; whatever clears the gates arrives as context before Claude answers.
 
@@ -130,7 +136,7 @@ The gates are what keep it from becoming wallpaper, and they were tuned against 
 
 Fires on about half the prompts it sees, mean **2.1** hits, **~550 bytes** injected, and the whole hook runs in **milliseconds**. One FTS5 query — the embedding leg was measured to make this path worse and was removed from it (see [the number](#the-number)). Still no LLM call anywhere in it.
 
-## 🔁 the learning loop
+## the learning loop
 
 A Stop hook appends your message from each turn to a per-project inbox file, flagged when it reads like a correction. At session start, once five or more signals accumulate, Claude gets a note telling it to distill them into its persistent memory and clear the inbox. The hooks contain no LLM calls. The distillation happens inside a session you were going to run anyway, where the full context already lives.
 
@@ -138,17 +144,21 @@ That same SessionStart hook also briefs you on what's still open: chronic asks t
 
 A third hook, sharing `UserPromptSubmit` with recall above, classifies each prompt against a phrase table — correction, preference, decision, method, reference — and once per session per category, injects a one-line nudge to capture it (`cml hint`), e.g. *"reads like a durable preference — consider capturing it so future sessions inherit it."* It's a suggestion, never a write: the model still decides what's worth keeping. Still zero LLM calls anywhere in the loop, just SQL and string matching.
 
-## 📖 the wiki
+## the wiki
 
 A folder of markdown files, one page per topic, edited in place when facts change. Old states aren't lost; the transcripts keep them. Obsidian opens the folder as a vault. `cml search <topic> --role wiki` finds pages, and the bundled skill keeps Claude writing them.
 
-## 🌌 the map
+## the map
 
 ```bash
 cml map          # builds and opens it
 ```
 
-Your memory as a navigable 3D brain: projects orbit the center, sessions cluster around projects, every fact is a shaded orb colored by role. The map plots knowledge, not rows — a message earns a point by carrying a durable fact, and everything else stays searchable without becoming one. Most rows never earn one. On the corpus this was built against, 1,077 rows produce 369 points, and the 708 that stay dark are status reports, mode acknowledgments, and answers to questions that will not come up again. `--raw` puts every row back. Memory notes and wiki pages link to each other through their `[[wikilinks]]`, so the curated layer renders like Obsidian's graph view, except in three dimensions and sitting next to the conversations it came from. Search flies the camera to matches, chips filter by role, clicking a node shows the text and the `cml search` command to pull it in a terminal.
+Your memory as a navigable 3D brain. Projects orbit the center, sessions cluster around projects, and every fact is a shaded orb colored by role.
+
+The map plots knowledge, not rows. A message earns a point by carrying a durable fact; everything else stays searchable without becoming one. Most rows never earn it. On the corpus this was built against, 1,077 rows produce 369 points. The 708 that stay dark are status reports, mode acknowledgments, and answers to questions that will not come up again. `--raw` puts them all back.
+
+Memory notes and wiki pages link to each other through their `[[wikilinks]]`, so the curated layer renders like Obsidian's graph view, except in three dimensions and sitting next to the conversations it came from. Search flies the camera to matches, chips filter by role, and clicking a node shows the text plus the `cml search` command to pull it up in a terminal.
 
 If the repo you're standing in has a graphify knowledge graph, `--code` renders it as a cyan code constellation beside your conversations — functions, files, and concepts in the same space as the sessions that wrote them. It is opt-in on purpose: the overlay occupies a single orbital slot, a project's worth, while carrying up to 3000 nodes, so enabling it packs a solid sphere in front of the brain. Bare `--code` auto-detects `graphify-out/graph.json`; `--code <path>` points it anywhere. For reading code structure on its own, graphify's own viewer is the better tool.
 
@@ -158,7 +168,7 @@ The engine is vendored three.js driven by C++. The layout is precomputed at gene
 
 One static HTML file with the render engine vendored in. Works offline, no CDN, no server. Generating 4,000+ nodes takes well under a second.
 
-## 🛡️ when it breaks
+## when it breaks
 
 There is no worker process to die. `capture`, `nudge`, `hint`, and `recall` exit 0 on every code path, including total failure, so a broken install degrades to "no memory" instead of "no Claude". When the binary itself is missing, the bootstrap still emits valid passthrough JSON for all four.
 
@@ -169,7 +179,7 @@ There is no worker process to die. `capture`, `nudge`, `hint`, and `recall` exit
 > cml index --all
 > ```
 
-## ⚖️ vs claude-mem
+## vs claude-mem
 
 claude-mem is the popular one, and it works for plenty of people. It also runs a persistent Bun worker on a local HTTP port (default `37700 + uid % 100`, historically 37777), needs Node plus Bun plus a Python vector database, and summarizes your session with LLM calls while you work. Users on Pro plans have burned a [full 5-hour token budget in under 10 messages](https://github.com/thedotmack/claude-mem/issues/618) with it enabled. When the worker doesn't come up, its hook has [failed in a loop and blocked prompts](https://github.com/thedotmack/claude-mem/issues/2926). I read that issue tracker for an afternoon and wrote this instead.
 
@@ -222,9 +232,13 @@ The cause is structural: retrieval requires two shared content words before a ro
 
 **Where claude-mem is ahead:** it compresses. Fifty LLM calls buy a summary of a 200k-token session; we have no equivalent and don't attempt one, because we retrieve the original instead. It is also vastly more adopted, and adoption is not something a benchmark fixes.
 
-**vault-template plugins** (e.g. [obsidian-mind](https://github.com/breferrari/obsidian-mind)) are a folder of markdown plus an instruction manual telling Claude how to file notes into it. Read the code before the stars. Of obsidian-mind's 27 commands and agents, three do memory; the rest is performance-review tooling (brag docs, 1:1 trackers, standup generators). The "brain" ships as empty placeholder files. Nothing is captured unless you run a command, so it remembers exactly what you remember to tell it: a diary with extra steps, not memory. Semantic search is outsourced to an optional external engine that wants ~1.6 GB of local models and ~1.28 GB of RAM per reranked query; when it isn't installed, "semantic search" quietly means grep. And the filing instructions are loaded into every session, thousands of tokens deep, before you type a word.
+**vault-template plugins** (e.g. [obsidian-mind](https://github.com/breferrari/obsidian-mind)) are a folder of markdown plus an instruction manual telling Claude how to file notes into it. Read the code before the stars.
 
-Your memory already exists. It's the transcripts. Index them; don't make a human the capture hook.
+Of obsidian-mind's 27 commands and agents, three do memory. The rest is performance-review tooling: brag docs, 1:1 trackers, standup generators. The "brain" ships as empty placeholder files.
+
+Nothing is captured unless you run a command, so it remembers exactly what you remembered to tell it. That is a diary with extra steps, not memory. Semantic search is outsourced to an optional external engine wanting ~1.6 GB of local models and ~1.28 GB of RAM per reranked query; when it isn't installed, "semantic search" quietly means grep. The filing instructions load into every session, thousands of tokens deep, before you type a word.
+
+Your memory already exists. It's the transcripts. Index them, and don't make a human the capture hook.
 
 | | claude-memory-light | vault-template plugins |
 |---|:---:|:---:|
@@ -232,7 +246,7 @@ Your memory already exists. It's the transcripts. Index them; don't make a human
 | semantic search | ✅ hybrid FTS5 + vectors, in the one binary | ⚠️ typically a separate tool, GB-scale local model |
 | standing context cost | ✅ ~0 standing; briefing measured at 1.2kB on a fresh start, 0.5kB on resume | ⚠️ always-loaded filing instructions, thousands of tokens/session |
 
-## 🧰 cli
+## cli
 
 | command | what it does |
 |---|---|
@@ -240,7 +254,7 @@ Your memory already exists. It's the transcripts. Index them; don't make a human
 | `cml search <terms> [--project P] [--role R] [--limit N] [--semantic\|--keyword]` | hybrid ranked search |
 | `cml embed [--all]` | build (or rebuild) the semantic index — one-time init, then automatic |
 | `cml forget <rowid...>` \| `--match "<q>" [--yes]` | purge junk memories, blocklisted so reindexing never resurrects them (`--clear` undoes) |
-| `cml distill [--all] [--limit N]` | optional LLM curation: a cheap external model (DeepSeek by default) judges every row on two independent axes — *keep* (is there content?) and *durable* (worth a permanent point?). Undurable rows are kept and stay searchable, they simply carry no gist. Once a key sits in `llm.key`, `cml index` starts this **detached in the background** — it costs ~20s a row, so it can never run on the Stop hook's clock; the last run's outcome shows up in `cml doctor`. `--all` re-judges from scratch, `--limit` caps rows per run |
+| `cml distill [--all] [--limit N]` | optional LLM curation, see below |
 | `cml map [--limit N] [--code [G]] [--no-open] [--raw]` | build + open the 3D memory map; `--raw` plots every row instead of only knowledge, `--code` overlays graphify's code graph (opt-in) |
 | `cml loops [--days N] [--limit K]` | chronic-loop detection: asks recurring across ≥2 sessions in the window, most-recurrent first (default 30 days, top 10) |
 | `cml stats` | row counts, knowledge count, DB size |
@@ -252,9 +266,15 @@ Your memory already exists. It's the transcripts. Index them; don't make a human
 | `cml recall` | *(hook)* UserPromptSubmit: retrieves against the prompt and injects the top matches, gated on rarity, substance, overlap, echo and novelty |
 | `cml eval [-k N] [--limit N] [--vectors] [--no-asks]` | recall@k against your own history; the flags ablate the embedding leg and the doc2query expansions so any claim here stays checkable |
 
-<kbd>CML_HOME</kbd> moves the data directory (default `~/.claude/claude-memory-light`). <kbd>CML_NUDGE_THRESHOLD</kbd> tunes the nudge, default 5. <kbd>CML_EMBED_MODEL</kbd> swaps the embedding model — `minishlab/potion-base-32M` for better recall, `minishlab/potion-multilingual-128M` for non-English corpora; run `cml embed --all` after switching.
+<kbd>CML_HOME</kbd> moves the data directory (default `~/.claude/claude-memory-light`). <kbd>CML_NUDGE_THRESHOLD</kbd> tunes the nudge, default 5. <kbd>CML_EMBED_MODEL</kbd> swaps the embedding model: `minishlab/potion-base-32M` for better recall, `minishlab/potion-multilingual-128M` for non-English corpora. Run `cml embed --all` after switching.
 
-## ❓ faq
+### curation, if you want it
+
+`cml distill` is optional. A cheap external model (DeepSeek by default) judges each row on two independent questions: is there content here, and is it worth a permanent point on the map? A row that fails the second still stays searchable, it just carries no gist.
+
+Once a key sits in `llm.key`, `cml index` starts this **detached in the background**. It costs about 20 seconds a row, so it can never run on the Stop hook's clock. Whatever the last run did shows up in `cml doctor`.
+
+## faq
 
 <details>
 <summary><b>does my data leave the machine?</b></summary>
@@ -308,7 +328,7 @@ About 11 MB for 50 sessions / 4,000 messages on my machine. SQLite FTS5 handles 
 
 </details>
 
-## 🗺️ roadmap
+## roadmap
 
 - [x] FTS5 index over transcripts, memory notes, wiki
 - [x] learning loop (capture + nudge)
@@ -327,7 +347,7 @@ About 11 MB for 50 sessions / 4,000 messages on my machine. SQLite FTS5 handles 
 - [ ] optional end-of-session digests (batched, single call, opt-in)
 - [ ] windows support
 
-## ⭐ star history
+## star history
 
 <div align="center">
 
@@ -335,14 +355,14 @@ About 11 MB for 50 sessions / 4,000 messages on my machine. SQLite FTS5 handles 
 
 </div>
 
-## 📄 license
+## license
 
 [MIT](LICENSE) © [MiracleWeb3](https://github.com/MiracleWeb3)
 
 <div align="center">
 <img src="https://capsule-render.vercel.app/api?type=waving&height=120&color=gradient&customColorList=12&section=footer" width="100%" alt=""/>
 
-**[⬆ back to top](#claude-memory-light)**
+**[⬆ back to top](#top)**
 
 </div>
 
