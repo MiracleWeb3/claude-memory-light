@@ -306,6 +306,36 @@ Both halves are gated on a measured number, not on shipping.
   the survival gate is met on the population that matters — is the honest one, and it is stated
   rather than used to quietly declare a pass.
 
+  **The drag mechanism has a ceiling, and it is below the gate.** Extending the sweep to an
+  effectively unbounded reach: depth 32 gives 65.7% at the 38% bytes that head/tail alone
+  costs, and depth 200 gives **66.4%** — 3.6 points short, permanently. On the files actually
+  condensed the curve *peaks at 52.9% (depth 8) and then declines*, because further reach
+  pushes files across the grow guard rather than keeping more lines. So no depth buys the gate;
+  the remaining ~34% of lines have no needle-matching neighbour at all. That is a statement
+  about which rule is missing, not a knob left unturned.
+
+  **And the data names the missing rule.** The harness prints a per-needle table that no report
+  quoted, sorted worst-first:
+
+  | needle | survival | drags off | n |
+  |---|--:|--:|--:|
+  | `traceback` | **40.5%** | 27.0% | 37 |
+  | `warning` | 43.5% | 39.1% | 46 |
+  | `exception` | **50.5%** | 23.2% | 220 |
+  | `fail` | 51.1% | 38.9% | 628 |
+  | `error` | 54.4% | 40.5% | 607 |
+
+  The two worst-served shapes are `traceback` and `exception` — the two a condenser exists to
+  protect. Whatever rule comes next should be aimed there, not chosen from a blank page. (Rows
+  with n = 1–13 are noise and are omitted; the earlier "58–100% range" reading was reading
+  single-observation rows as signal.)
+
+  **Three needles are provably dead.** `command not found` always also matches `not found`,
+  `permission denied` always also matches `denied`, `unexpected` always also matches
+  `expected`. None can ever be the sole match, so deleting all three changes no output for any
+  input — and the leave-one-out metric can never produce a number for them, which means the
+  "simulated 31 ways" is really 24. Free to cut.
+
   The curve is monotone and opposed with no plateau, and `0 -> 1` is the knee — 1.2 points of
   bytes buys 5.0 of survival, every later step buys 1–2:
 
