@@ -202,12 +202,20 @@ work: one row needs no summary to be found.
 growing it is how a briefing becomes wallpaper. What changes is what fills it:
 
 1. rank `scene` with the same query, through the existing rarity and overlap gates
-2. a scene wins -> **1 scene line + up to 2 atoms drawn from that same session**
+2. a scene wins -> **1 scene line + up to 2 rows from the ordinary lanes**, unnarrowed
 3. no scene -> today's path, unchanged
 
-That is progressive disclosure done push-style: the hook picks the depth. A pull-based
-drill-down was rejected for the same reason recall itself is hooked — `recall/retrieve.cpp:4-8`
-records the read half firing 2% of the time when it was the model's decision to make.
+**The L2->L1 narrowing is not implemented.** Step 2 originally read "up to 2 atoms drawn from
+that same session", and nothing was built that does that: `recall/hook.cpp` queries the row
+lanes with the same global query it always used, with `exclude_session` still set to the live
+session. So a scene **displaces** a row rather than opening one — 16 of its 19 firings took a
+slot an already-full briefing had spent, measured in the Verdict below. Narrowing the lanes to
+the matched scene's session is queued separately as a precision fix; there is no L2->L1 link
+in this tree to go looking for.
+
+Push-style either way: the hook picks the depth, not the model. A pull-based drill-down was
+rejected for the same reason recall itself is hooked — `recall/retrieve.cpp:4-8` records the
+read half firing 2% of the time when it was the model's decision to make.
 
 L3 needs no work. `role='memory'` rows are already indexed and already reachable, so the
 drill order is standing rules -> episode -> the message itself.

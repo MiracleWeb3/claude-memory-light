@@ -1,4 +1,5 @@
 // The condenser: which results it touches, and what survives when it does.
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -231,12 +232,48 @@ void test_spill_round_trips() {
 void test_spill_failure_is_silent() {
     ok(cml::spill_write("", "toolu_1", "x").empty(),
        "no session means no spill path, and no exception");
-    // Both components are pasted into a filesystem path and both arrive as JSON on stdin.
+    // Both components are pasted into a filesystem path, both arrive as JSON on stdin, and
+    // both are refused the same way. The tool_use_id used to fall back to a constant name
+    // instead — traversal-safe, and a collision: `ios::trunc` means the second unnamed spill
+    // in a session erases the first, whose transcript entry still points at that path. The
+    // model reading another command's output as this one's recovery is worse than losing it.
     ok(cml::spill_write("../../etc", "toolu_1", "x").empty(), "a traversing session is refused");
-    const std::string p = cml::spill_write("sess-abc", "../../../tmp/pwned", "x");
-    ok(!p.empty() && p.find("pwned") == std::string::npos,
-       "and a traversing tool_use_id falls back to a plain name rather than escaping");
-    std::filesystem::remove(p);
+    ok(cml::spill_write("sess-abc", "../../../tmp/pwned", "x").empty(),
+       "so is a traversing tool_use_id — never renamed onto a path another spill also writes");
+    ok(cml::spill_write("sess-abc", "", "x").empty(), "as is a missing one");
+}
+
+// The spill is written through a buffer, so `write()` returning a good stream says only that
+// the bytes reached memory. For a body under libstdc++'s ~8 KB filebuf the disk is touched in
+// the destructor — after the path has been returned, unchecked. Since the transcript keeps
+// only the condensed replacement, handing back a path for a file that was never written
+// destroys the original and points at nothing.
+//
+// /dev/full reproduces the failure with the right SHAPE: open succeeds, the buffered write
+// succeeds, and only the flush fails with ENOSPC — which is what a full disk or a hit quota
+// does. A read-only directory would fail at open() instead, exercising the check that already
+// worked. Runs first in the spill group: it points $CML_HOME at a sandbox, so the two cases
+// below stop writing into the user's own memory store.
+void test_spill_that_cannot_flush_returns_no_path() {
+    namespace fs = std::filesystem;
+    if (!fs::exists("/dev/full")) return;
+    const auto tmp = fs::temp_directory_path() / "cml-selftest-spill";
+    fs::remove_all(tmp);
+    fs::create_directories(tmp / "spill" / "sess-full");
+    setenv("CML_HOME", tmp.c_str(), 1);
+
+    const std::string body(3000, 'x');  // over kMinBytes, under the filebuf: the lost band
+    const auto trap = tmp / "spill" / "sess-full" / "toolu_9.txt";
+    fs::create_symlink("/dev/full", trap);
+    ok(cml::spill_write("sess-full", "toolu_9", body).empty(),
+       "a spill that cannot reach the disk returns no path, so nothing gets condensed");
+    ok(!fs::exists(fs::symlink_status(trap)),
+       "and leaves nothing behind for a later read to mistake for the original");
+
+    // The control. Without it this test passes against a spill_write that always fails.
+    const std::string good = cml::spill_write("sess-full", "toolu_ok", body);
+    ok(!good.empty() && fs::file_size(good) == body.size(),
+       "while a spill that CAN be written is on disk, whole, before the path is handed back");
 }
 
 }  // namespace
@@ -256,6 +293,7 @@ void suite_offload() {
     test_failure_on_the_first_line_keeps_its_body();
     test_grew_path_reports_no_stale_counts();
     test_calibration_seam_defaults_to_production_and_bites_when_set();
+    test_spill_that_cannot_flush_returns_no_path();  // sets $CML_HOME; the two below inherit it
     test_spill_round_trips();
     test_spill_failure_is_silent();
 }

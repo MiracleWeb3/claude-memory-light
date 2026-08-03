@@ -213,17 +213,34 @@ Condensed condense(std::string_view out, std::string_view spill_path, CondenseOp
 // recovery, so recovery gets its own store rather than a looser cap.
 std::string spill_write(std::string_view session, std::string_view tool_use_id,
                         std::string_view body) {
-    if (!plain_name(session)) return {};
+    // Both components follow the same rule. `tool_use_id` used to fall back to a constant
+    // "result", which is traversal-safe and opens a collision instead: the stream is
+    // `ios::trunc`, so two unnamed spills in one session write the same file and the second
+    // erases the first — whose transcript entry still names that path. The model then reads
+    // another command's output believing it is this one's recovery, which is worse than
+    // losing it. Refusing costs nothing: no spill already means no condensation.
+    if (!plain_name(session) || !plain_name(tool_use_id)) return {};
     std::error_code ec;
     const auto dir = data_dir() / "spill" / std::string(session);
     std::filesystem::create_directories(dir, ec);
     if (ec) return {};
-    const auto path =
-        dir / ((plain_name(tool_use_id) ? std::string(tool_use_id) : "result") + ".txt");
+    const auto path = dir / (std::string(tool_use_id) + ".txt");
     std::ofstream out(path, std::ios::binary | std::ios::trunc);
     if (!out) return {};
     out.write(body.data(), static_cast<std::streamsize>(body.size()));
-    if (!out) return {};
+    // close() before the check — not the destructor after the return. ofstream buffers, so a
+    // body under libstdc++'s ~8 KB filebuf never reached the disk while `write()` returned:
+    // the stream was still good, this handed back a path, and the real I/O happened during
+    // destruction with nobody looking at it. Measured on a tmpfs with 8 KB free, a 3,000-byte
+    // body passed the old check and landed 0 bytes. That band — 2 KB (kMinBytes) to ~8 KB —
+    // is most of the condensed population by count, and the transcript keeps only the
+    // condensed form, so the path in it named a file that did not exist and the elided lines
+    // were gone from both copies.
+    out.close();
+    if (!out) {
+        std::filesystem::remove(path, ec);  // no empty file left behind looking authoritative
+        return {};
+    }
     return path.string();
 }
 
