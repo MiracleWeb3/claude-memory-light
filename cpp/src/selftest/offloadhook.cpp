@@ -22,21 +22,7 @@ namespace fs = std::filesystem;
 fs::path sandbox() { return fs::temp_directory_path() / "cml-selftest-offload"; }
 
 // $CML_HOME redirects the spill, so a test run never writes into the real memory dir.
-std::string run(const std::string& payload) {
-    const fs::path exe = fs::read_symlink("/proc/self/exe").parent_path() / "cml";
-    if (!fs::exists(exe)) return {};  // selftest built alone; nothing to drive
-    const fs::path in = sandbox() / "in.json";
-    { std::ofstream(in) << payload; }
-    const std::string cmd = "CML_HOME=" + sandbox().string() + " " + exe.string() +
-                            " offload < " + in.string();
-    FILE* p = popen(cmd.c_str(), "r");
-    if (!p) return {};
-    std::string out;
-    char buf[4096];
-    while (std::size_t n = std::fread(buf, 1, sizeof buf, p)) out.append(buf, n);
-    pclose(p);
-    return out;
-}
+std::string run(const std::string& payload) { return drive("offload", sandbox(), payload); }
 
 std::string payload(const std::string& body, bool with_session = true) {
     std::string esc;

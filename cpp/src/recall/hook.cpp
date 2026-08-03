@@ -41,6 +41,12 @@ void recall() {
     Db db = open_db();
     if (!db) return passthrough();
 
+    // L2 first, and it gets one line of three. A scene says what a whole session
+    // concluded, which is the one thing no single row can say; behind the row lanes it
+    // would compete for a budget they have already spent, which is exactly how the work
+    // lane sat unreachable while being fully wired.
+    const auto scene = scene_hit(db, prompt, session);
+
     // Over-fetch: rows already injected this session are skipped below, and the next
     // fresh one should take the freed slot rather than leaving the briefing short.
     const auto conv = retrieve(db, prompt, session, kMaxHits * 4);
@@ -53,7 +59,7 @@ void recall() {
     RetrieveOpts work_opts;
     work_opts.tools = true;
     const auto work = retrieve(db, prompt, session, 2, work_opts);
-    if (conv.empty() && work.empty()) return passthrough();
+    if (conv.empty() && work.empty() && !scene) return passthrough();
 
     Stmt mark(db, "INSERT OR IGNORE INTO recalled(session, key) VALUES(?1, ?2)");
     const auto fresh = [&](const Hit& h) {
@@ -63,8 +69,13 @@ void recall() {
         return mark.run() && sqlite3_changes(db.raw()) != 0;
     };
 
+    // Three lines, still. A scene spends one of them, it does not add a fourth: this is
+    // seen on every prompt, and growing the budget is how a briefing becomes wallpaper.
+    // When no scene matches — or it was already injected this session — nothing below
+    // changes and the output is byte-identical to what it was (asserted in suite_ports).
     std::vector<std::string> lines;
-    const std::size_t conv_budget = work.empty() ? kMaxHits : kMaxHits - 1;
+    if (scene && fresh(*scene)) lines.push_back(scene->line);
+    const std::size_t conv_budget = kMaxHits - lines.size() - (work.empty() ? 0 : 1);
     for (const auto& h : conv) {
         if (lines.size() >= conv_budget) break;
         if (fresh(h)) lines.push_back(h.line);

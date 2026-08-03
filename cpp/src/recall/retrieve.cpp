@@ -22,6 +22,7 @@
 #include "recall.hpp"
 
 #include <algorithm>
+#include <optional>
 #include <string>
 
 #include "db.hpp"
@@ -169,6 +170,40 @@ std::vector<Hit> retrieve(Db& db, std::string_view prompt, std::string_view excl
                        key});
     }
     return out;
+}
+
+// L2. The terms come from `mem`'s rarity statistics, not from `scene`'s, and that is
+// deliberate: there are 72 scenes against kMinCorpus = 200, so a scene lane judging its
+// own table would take the "young index, let everything through" branch and fire on
+// exactly the prompts the row lanes correctly stay silent on. Same terms, same OR-query,
+// same two-word overlap floor — one table further up the ladder.
+std::optional<Hit> scene_hit(Db& db, std::string_view prompt, std::string_view exclude_session) {
+    if (is_noise(prompt)) return std::nullopt;
+    const auto words = content_terms(prompt);
+    if (words.size() < kMinTerms) return std::nullopt;
+    const auto terms = discriminative(db, words, Lane::Conversation);
+    if (terms.size() < kMinTerms) return std::nullopt;
+
+    const auto ranked =
+        rank_rowids(db, or_query(terms), {}, kCandidates, nullptr, false, Lane::Scene);
+    Stmt fetch(db, "SELECT title, summary, outcome, session, ts_end FROM scene WHERE rowid=?1");
+    if (!fetch) return std::nullopt;
+
+    for (const std::int64_t rowid : ranked) {
+        fetch.reset();
+        fetch.bind(1, rowid);
+        if (!fetch.step()) continue;
+        const std::string title = fetch.text(0), summary = fetch.text(1);
+        const std::string outcome = fetch.text(2), sess = fetch.text(3), ts = fetch.text(4);
+        // The live session has no scene yet, but a resumed one does — and its summary is
+        // the conversation already on screen.
+        if (!exclude_session.empty() && sess == exclude_session) continue;
+        if (term_overlap(title + " " + summary, terms) < kMinOverlap) continue;
+        const std::string date = (ts.size() >= 10) ? ts.substr(0, 10) : "no-date";
+        return Hit{rowid, title + " (" + outcome + ", " + date + ")",
+                   stable_key(sess, ts, "scene", title)};
+    }
+    return std::nullopt;
 }
 
 }  // namespace cml

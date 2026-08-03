@@ -32,7 +32,7 @@ namespace {
 
 int usage() {
     std::printf(
-        "cml: index [--all] | search <terms> [--project P] [--role R] [--limit N]\n"
+        "cml: index [--all] | search <terms> [--project P] [--role R|scene] [--limit N]\n"
         "     [--semantic|--keyword] | forget <rowid...> | forget --match \"<q>\" [--yes]\n"
         "     | distill [--all] [--limit N] | distill --scenes [--all] [--limit SESSIONS]\n"
         "     | embed [--all] | map [--limit N] [--no-open] [--raw]\n"

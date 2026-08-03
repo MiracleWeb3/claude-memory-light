@@ -83,11 +83,16 @@ int stats() {
     const std::int64_t knowledge =
         db.scalar("SELECT count(*) FROM distilled WHERE gist != ''") +
         db.scalar("SELECT count(*) FROM mem WHERE role IN ('memory','wiki')");
+    // L2, counted separately: a scene is neither a row nor a gist, and it is the one
+    // number that says whether `cml distill --scenes` has ever run.
+    const std::int64_t scenes = db.scalar("SELECT count(*) FROM scene");
 
-    std::printf("%lld rows (%s) | %lld knowledge | %lld sessions | %lld files | %.1f MB at %s\n",
-                static_cast<long long>(msgs), by_role.c_str(),
-                static_cast<long long>(knowledge), static_cast<long long>(sessions),
-                static_cast<long long>(files), ec ? 0.0 : mb, dbp.string().c_str());
+    std::printf(
+        "%lld rows (%s) | %lld knowledge | %lld scenes | %lld sessions | %lld files | "
+        "%.1f MB at %s\n",
+        static_cast<long long>(msgs), by_role.c_str(), static_cast<long long>(knowledge),
+        static_cast<long long>(scenes), static_cast<long long>(sessions),
+        static_cast<long long>(files), ec ? 0.0 : mb, dbp.string().c_str());
     return 0;
 }
 

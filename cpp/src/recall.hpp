@@ -3,6 +3,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -42,6 +43,12 @@ struct RetrieveOpts {
 
 std::vector<Hit> retrieve(Db& db, std::string_view prompt, std::string_view exclude_session,
                           std::size_t limit, RetrieveOpts opts = {});
+
+// The best-matching L2 scene for this prompt, or nothing. Same gates as retrieve(), one
+// table up: what a whole session concluded, in place of one of its messages. `Hit::line`
+// is "<title> (<outcome>, <date>)" — ready to inject, and `Hit::key` dedupes it per
+// session the way a row is deduped.
+std::optional<Hit> scene_hit(Db& db, std::string_view prompt, std::string_view exclude_session);
 
 // Retrieve against the incoming prompt and inject what clears the gate.
 // Always prints valid passthrough JSON — a hook must never block the session.

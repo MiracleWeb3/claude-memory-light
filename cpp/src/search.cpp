@@ -64,6 +64,53 @@ std::string pad(std::string s, std::size_t width) {
     return s;
 }
 
+// Which table a lane ranks against. A switch with no `default`, so adding a lane without
+// its table is a build error rather than a silent search of `mem` — the same reason
+// `curator_prompt` stopped being a ternary.
+const char* lane_sql(Lane lane) {
+    switch (lane) {
+        case Lane::Tools:
+            return "SELECT rowid FROM work WHERE work MATCH ?1 ORDER BY rank LIMIT ?2";
+        case Lane::Scene:
+            return "SELECT rowid FROM scene WHERE scene MATCH ?1 ORDER BY rank LIMIT ?2";
+        case Lane::Conversation:
+            break;
+    }
+    return "SELECT rowid FROM mem WHERE mem MATCH ?1 ORDER BY rank LIMIT ?2";
+}
+
+// L2: one line per session that concluded something. Its own printer because a scene has
+// no role, no session prefix and no gist indirection — the four columns it does have are
+// the whole row, and squeezing them into the `mem` formatter would mean padding empty
+// fields to keep columns that mean nothing here.
+int print_scenes(Db& db, const std::vector<std::string>& terms, const std::string& joined,
+                 const std::string& project, std::size_t limit) {
+    const auto ranked =
+        rank_rowids(db, fts_query(terms), {}, kCandidates, nullptr, false, Lane::Scene);
+    Stmt fetch(db, "SELECT title, summary, outcome, project, ts_start, ts_end FROM scene "
+                   "WHERE rowid=?1");
+    const std::string want_project = lower(project);
+    const auto day = [](std::string ts) { return ts.size() >= 10 ? ts.substr(0, 10) : ts; };
+
+    std::size_t printed = 0;
+    for (const std::int64_t rowid : ranked) {
+        if (printed >= limit) break;
+        fetch.reset();
+        fetch.bind(1, rowid);
+        if (!fetch.step()) continue;
+        const std::string proj = fetch.text(3);
+        if (!want_project.empty() && lower(proj).find(want_project) == std::string::npos)
+            continue;
+        // \xE2\x80\x94 is U+2014 EM DASH.
+        std::printf("%s \xE2\x80\x94 %s (%s, %s..%s)\n", fetch.text(0).c_str(),
+                    squeeze(fetch.text(1), 300).c_str(), fetch.text(2).c_str(),
+                    day(fetch.text(4)).c_str(), day(fetch.text(5)).c_str());
+        ++printed;
+    }
+    if (printed == 0) std::printf("no scenes for: %s\n", joined.c_str());
+    return 0;
+}
+
 }  // namespace
 
 std::vector<std::int64_t> rank_rowids(Db& db, const std::string& fts,
@@ -72,9 +119,7 @@ std::vector<std::int64_t> rank_rowids(Db& db, const std::string& fts,
     // Keyword leg: FTS5 BM25.
     std::vector<std::int64_t> hits;
     if (!fts.empty()) {
-        Stmt s(db, lane == Lane::Tools
-                       ? "SELECT rowid FROM work WHERE work MATCH ?1 ORDER BY rank LIMIT ?2"
-                       : "SELECT rowid FROM mem WHERE mem MATCH ?1 ORDER BY rank LIMIT ?2");
+        Stmt s(db, lane_sql(lane));
         if (s) {
             s.bind(1, fts).bind(2, candidates);
             while (s.step()) hits.push_back(s.i64(0));
@@ -85,8 +130,12 @@ std::vector<std::int64_t> rank_rowids(Db& db, const std::string& fts,
 
     // Semantic leg: local embeddings + sqlite-vec KNN. Hybrid by default once
     // `cml embed` has run; silent when the model or the vector table is absent.
+    // Conversation only: `vec_mem` keys its vectors by `mem.rowid`, so fusing it into
+    // another lane scores a scene (or a tool row) by whatever message happens to carry
+    // the same rowid. Both other lanes are keyword-only today, which is why this has
+    // never fired — that is a coincidence, not a guard.
     std::vector<std::int64_t> vec_hits;
-    if (!semantic_query.empty()) {
+    if (!semantic_query.empty() && lane == Lane::Conversation) {
         std::string err;
         vec_hits = semantic_hits(db, semantic_query, candidates, err);
         if (vec_hits.empty() && semantic_error && semantic_error->empty()) *semantic_error = err;
@@ -164,6 +213,19 @@ int search(const std::vector<std::string>& args) {
         if (!joined.empty()) joined += ' ';
         joined += t;
     }
+
+    // `--role scene` is a LANE, not the post-filter every other --role value is. Scenes
+    // live in their own FTS5 table, so filtering `mem`'s role column for "scene" can only
+    // ever return nothing.
+    if (role == "scene") {
+        if (semantic_only) {
+            std::fprintf(stderr, "cml: scenes carry no embeddings — --semantic cannot "
+                                 "answer here; drop the flag for keyword search\n");
+            return 1;
+        }
+        return print_scenes(db, terms, joined, project, limit);
+    }
+
     // `--semantic` refuses loudly rather than silently returning keyword hits.
     std::string err;
     const auto ranked = rank_rowids(db, semantic_only ? std::string{} : fts_query(terms),
