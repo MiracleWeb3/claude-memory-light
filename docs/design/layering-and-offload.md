@@ -328,6 +328,68 @@ Both halves are gated on a measured number, not on shipping.
   matches what the tool actually printed. Asserted in selftest.
 - Recall on a prompt matching no scene returns exactly what it returns today.
 
+## Verdict on scenes, measured 2026-08-03
+
+72 scenes exist over 76 eligible sessions, at a cost of **~76 curator calls**, and both
+retrieval surfaces are wired: `cml search --role scene` and one line of `recall()`'s three.
+What follows is what that bought. **Keep** — but the margin is thinner than the headline
+coverage number suggests, and the weakness is named below rather than argued away.
+
+**Coverage — 9.5%, on the population the layer serves.** Measured by driving the real
+binary's `recall` subcommand, one fresh session id per prompt, against a byte copy of the
+live index (so the real `recalled` counter stays honest):
+
+| population (last 200, to 2026-08-03) | briefing fires | a scene is in it |
+|---|--:|--:|
+| the literal last 200 prompts | 30.0% | **4.0%** |
+| the last 200 **human-typed** prompts | 60.5% | **9.5%** |
+
+The two differ because the literal window is 50% machine traffic — 58 slash-command
+envelopes, 32 teammate messages, 10 Stop-hook feedbacks from the multi-agent runs of the
+last two days, all of which `is_noise()` correctly refuses. The 9.5% is the number that
+means something; the 4.0% is what the spec literally asked for. Both clear the stated floor
+that "a layer that fires on 2% of prompts is not a layer" — the honest one by 5x.
+
+**Quality — 13 of 15.** Sampling every 5th scene by `ts_end`: 13 state a mechanism, a
+decision or a rule; 2 restate that work happened. Both of the 2 say so themselves and carry
+`outcome = abandoned` ("No root cause or design rule was uncovered"), which is the rubric
+doing exactly what it was told to do rather than failing. Among the 64 scenes claiming to
+have concluded something, the sample found no activity logs at all.
+
+**The weakness is targeting, not writing.** Of the 19 human prompts that fired a scene,
+about **11 were on-topic** by hand-read and 8 were coincidence — a prompt about moving
+kitty windows drew "Exodus crypto wallet installed; kitty window close key noted". And the
+budget is fixed, so **16 of the 19 displaced a row from an already-full briefing**; only 3
+filled a slot the row lanes had left empty. Net over 200 prompts: ~11 good injections
+bought at the price of ~8 wasted lines.
+
+**The obvious knob does not fix it — measured, not assumed.** Both tightenings were built
+and run over the same 200 prompts:
+
+| gate | fires | precision |
+|---|--:|--:|
+| **shipped:** overlap >= 2 over `title + summary` | 19 (9.5%) | ~11/19 |
+| overlap >= 3 over `title + summary` | 2 (1.0%) | 1/2 |
+| overlap >= 2 over `title` alone | 2 (1.0%) | 2/2 |
+
+Both collapse the layer below the 2% floor, and the first keeps a bad hit while dropping
+good ones. So precision here is not a knob left unturned — it is a statement about which
+rule is missing. A scene is ~4x the length of a row snippet, so a fixed shared-word count
+is weaker evidence against it than against a row; the rule that would actually help is
+making the scene *out-rank* the row it replaces rather than pre-empt it, or weighting
+`title` above `summary` in BM25. Neither is in this plan.
+
+**Ongoing cost is negligible:** 0.53 ms added to a 35 ms hook (0.24 ms for the second
+`discriminative()` pass, 0.29 ms for the scene BM25 query). Not worth restructuring
+`retrieve()` to share the term list.
+
+**Two measurement confounds worth recording, because both produced a confident wrong
+number first.** Splitting the injected context on the middle dot alone over-counted scenes
+(a memory row can contain one) — the separator is newline + U+00B7 + space. And re-running
+the sweep with the same synthetic session ids measured per-session dedupe instead of
+coverage, halving the fired count to 13.0%. A probe that is not itself checked gives a
+confident wrong answer.
+
 ## Calibration, before either full run
 
 `docs/design/durability-gate.md` records the method that saved an hour there: the first
