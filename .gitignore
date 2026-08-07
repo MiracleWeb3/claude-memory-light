@@ -7,3 +7,9 @@ cpp/build*/
 *.key
 cpp/build/
 .pantheon/
+.cache/
+.repowise/
+.vscode/
+.mcp.json
+compile_commands.json
+.claude/
