@@ -91,12 +91,13 @@ std::string project_state(Db& db, std::string_view project, std::size_t budget) 
     if (sessions == 0) return {};  // nothing on file: say nothing rather than a stub
 
     const auto gists = gist_lookup(db);
-    // Hand-written memory and wiki pages: the developer wrote these down deliberately,
-    // which makes them the highest-authority rows in the index.
-    const char* kStanding =
-        "SELECT ts, role, session, substr(text,1,400), substr(text,1,64) FROM mem "
-        "WHERE role IN ('memory','wiki') AND project=?1 ORDER BY ts DESC LIMIT ?2";
-    // Anything the curator judged durable — a decision, a root cause, a constraint.
+    // The `rule` lane used to re-surface role IN ('memory','wiki') here — the newest
+    // hand-written memory descriptions, verbatim, every session. Dropped: the harness
+    // already injects the curated MEMORY.md and the wiki index natively each session, so
+    // this only duplicated them, and a newest-first raw dump of memory descriptions puts
+    // whatever was last worked on into every prompt — which is what surfaced this project's
+    // context to the input classifier on benign requests. cml's unique standing signal is
+    // what MEMORY.md does NOT track: cross-session recurrence (open) and recent outcomes.
     const char* kDurable =
         "SELECT ts, role, session, substr(text,1,400), substr(text,1,64) FROM mem "
         "WHERE role IN ('assistant','user') AND project=?1 ORDER BY ts DESC LIMIT ?2";
@@ -107,7 +108,6 @@ std::string project_state(Db& db, std::string_view project, std::size_t budget) 
                       ". Standing context, not an answer to anything:";
     const std::size_t head = out.size();
 
-    section(out, "rule", pick(db, kStanding, project, kPerSection, gists, false), budget);
     {
         // Recurrence is measured across sessions, so it is the one signal that says
         // "this is still not fixed" without anyone having to mark it as such.
