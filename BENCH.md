@@ -6,8 +6,9 @@ results printed, because that is the latency a caller actually pays.
 
 ## Method rules, learned expensively
 
-1. **Never time a Debug build.** `cpp/CMakeLists.txt` makes `Debug` the *sanitizer* build
-   (`-fsanitize=address,undefined`), roughly 10x slower. `bench/run.sh` refuses an
+1. **Never time a debug build.** `cargo build` without `--release` is unoptimized and is
+   not what ships. The C++ tree went further and made its `Debug` profile the *sanitizer*
+   build (`-fsanitize=address,undefined`), roughly 10x slower. `bench/run.sh` refuses an
    instrumented binary outright (`nm` check for `__asan_`/`__ubsan_`).
 2. **Pass the same flags to both arms.** See the 2026-08-07 note below — an A/B that
    flagged one side and not the other produced a 6.6x phantom gap.
@@ -23,6 +24,7 @@ results printed, because that is the latency a caller actually pays.
 | 2026-08-07 | `search --keyword` "embedding leg recall", limit 20, median of 9 | 5.12 ms | contended, load 2.50 |
 | 2026-08-07 | `search --keyword` "rust c++ comparison", limit 20, median of 9 | 3.85 ms | contended, load 2.50 |
 | 2026-08-07 | `search --keyword` "touchpad drag", limit 1..50, 30 runs each | 3.78–5.61 ms | load ~1.9 |
+| 2026-08-11 | Rust v3.0.0, four queries, limit 20, median of 5 | 4.37–8.40 ms | quiet, load 1.26 |
 
 The 3.85–13.88 ms spread in the first four rows is host noise, not query cost — a 4-core
 box with unrelated work running. **Quiet-host re-measurement pending.** The last row was
@@ -54,9 +56,25 @@ vector rerank leg, loading potion-base-8M on every invocation:
 ~26 ms of model loading, attributed to the language. The claim survived only because no
 benchmark existed to contradict it. That is why this file exists.
 
+## 2026-08-11 — the second Rust arm
+
+cml went back to Rust at v3.0.0. Measured on a quiet host (load 1.26) against a 190 MB
+index, median of 5: **4.37, 5.91, 4.79 and 8.40 ms** for the four standing queries.
+
+The honest reading is parity again, on an index 47% larger than the one the C++ arm was
+measured against (190 MB vs 129 MB). It is not a win, and this method cannot see one at
+this scale: process fork alone is ~2 ms of the number, and the four queries spread wider
+between themselves than the two arms do between each other.
+
+**Correcting a claim in the line below.** The "214 transitive crates" figure describes the
+*first* Rust arm, and reads today as if it were a property of the language. The current
+tree has **24**, because `sqlite-vec` and its 8,315 vendored C lines were dropped rather
+than replaced and nothing was added to cover the gap. The build-time comparison it
+supports should be treated as unmeasured for the current tree, not inherited.
+
 ## Not yet measured
 
 - Indexing throughput (`cml index`), the other half of the tool's cost.
 - Semantic/hybrid search latency — only `--keyword` is covered here.
-- Build time. Clean C++ build was measured once at 87 s versus 383 s for the Rust
-  predecessor (214 transitive crates), but that is a one-off, not tracked here.
+- Build time for the current tree. Clean C++ build was measured once at 87 s versus 383 s
+  for the *first* Rust arm and its 214 crates; neither figure describes what builds now.
