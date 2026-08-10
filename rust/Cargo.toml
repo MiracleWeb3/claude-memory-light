@@ -1,0 +1,34 @@
+[package]
+name = "cml"
+version = "3.0.0"
+edition = "2021"
+rust-version = "1.97"
+description = "Full-history memory for Claude Code sessions"
+
+[dependencies]
+# Links the system libsqlite3 (3.45, FTS5 built in) rather than bundling a second
+# copy: the index.db this reads is already written by that exact library.
+# No `load_extension`: that call is unsafe, and the only reason the C++ tree needed
+# it was sqlite-vec. Vector search moved into Rust (see vector.rs), so 324K of
+# vendored C and the unsafe boundary both leave with it.
+rusqlite = "0.32"
+# Transcripts are .jsonl; every line is a JSON object we read a few fields out of.
+serde_json = "1"
+# metal: "Concurrency is the whole reason this rung is first." Indexing is a
+# per-file map with no shared state, which is exactly rayon's shape.
+rayon = "1"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = true
+
+# metal rule 3: the toolchain refuses. A language chosen for guarantees, run
+# without them, is the worst of both.
+[lints.rust]
+warnings = "deny"
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = "deny"
