@@ -127,14 +127,23 @@ pub fn eval(args: &[String]) -> crate::R<i32> {
     }
 
     let pct = |n: usize, d: usize| if d == 0 { 0.0 } else { 100.0 * n as f64 / d as f64 };
-    row(
-        "legs",
-        format!(
-            "{}, {}",
-            if ab.vectors { "BM25 + embedding rerank" } else { "BM25 only" },
-            if ab.text_only { "text column only (no expansions)" } else { "text + asks" }
-        ),
-    );
+    // Every ablation that moves the numbers is named on this line. A run with
+    // the gates off measures a different system than the hook, and a number
+    // that does not say so next to itself gets quoted as the hook's.
+    let mut legs = vec![
+        if ab.vectors { "BM25 + embedding rerank" } else { "BM25 only" },
+        if ab.text_only { "text column only (no expansions)" } else { "text + asks" },
+    ];
+    if ab.ungated {
+        legs.push("gates OFF (overlap, echo, fusion) — not the hook's configuration");
+    }
+    if ab.tools {
+        legs.push("tools lane (commands and their output)");
+    }
+    if cross_session {
+        legs.push("cross-session (the answer's own session excluded)");
+    }
+    row("legs", legs.join(", "));
     row(
         "pairs",
         format!("{} sampled of {} question/answer turns in the index", sample.len(), all.len()),
