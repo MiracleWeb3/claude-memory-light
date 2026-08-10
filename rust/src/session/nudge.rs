@@ -18,7 +18,7 @@
 use crate::recall::hook;
 
 use super::{consolidate, state};
-use crate::report::loops;
+use crate::report::loop_lines;
 use crate::paths;
 
 const DEFAULT_THRESHOLD: usize = 5;
@@ -57,7 +57,7 @@ pub fn nudge(_args: &[String]) -> crate::R<i32> {
         }
         if !pointer {
             // A failed query is not a reason to withhold the rest of the briefing.
-            let lines = loops::loop_lines(&conn, 30, 3, None).unwrap_or_default();
+            let lines = loop_lines(&conn, 30, 3, None).unwrap_or_default();
             if !lines.is_empty() {
                 let mut s =
                     String::from("[cml] open loops — asks that keep coming back unresolved:");

@@ -19,7 +19,7 @@ use rusqlite::Connection;
 use crate::text::{gist_lookup, squeeze, stable_key};
 
 use crate::paths;
-use crate::report::loops;
+use crate::report::loop_lines;
 
 const LINE: usize = 140; // one row, one line
 const PER_SECTION: usize = 3; // a briefing, not a report
@@ -151,7 +151,7 @@ pub fn project_state(conn: &Connection, project: &str, budget: usize) -> String 
     // Recurrence is measured across sessions, so it is the one signal that says "this is
     // still not fixed" without anyone having to mark it as such.
     // A failed query drops this section rather than the whole brief.
-    let open: Vec<String> = loops::loop_lines(conn, 45, PER_SECTION, Some(project))
+    let open: Vec<String> = loop_lines(conn, 45, PER_SECTION, Some(project))
         .unwrap_or_default()
         .iter()
         .map(|l| squeeze(l, LINE))

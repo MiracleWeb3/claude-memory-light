@@ -21,8 +21,6 @@
 //! move. Vectors still serve `cml search --semantic`, where they do something BM25
 //! cannot: "trackpad dragging" finds touchpad rows.
 
-use std::collections::HashMap;
-
 use rusqlite::Connection;
 
 use crate::lane::Lane;
@@ -31,7 +29,7 @@ use crate::text::{content_terms, gist_lookup, squeeze, stable_key, term_overlap}
 const SNIPPET: usize = 160; // ~3 lines of context total
 const MIN_TERMS: usize = 2; // "yes" and "do it" recall nothing
 const MIN_OVERLAP: usize = 2; // one shared word is a coincidence, two is a topic
-const CANDIDATES: i64 = 40;
+const CANDIDATES: usize = 40;
 const ECHO_MIN: usize = 25; // shorter than this, containment means nothing
 
 // Rarity gate. Measured before it existed: 76% of real prompts fired, most of them on
@@ -117,16 +115,15 @@ fn discriminative(conn: &Connection, terms: &[String], lane: Lane) -> Vec<String
         .collect()
 }
 
-/// BM25 candidates for `fts`, best first. A malformed match expression or a missing
-/// table yields no candidates rather than an error: this runs on a hook.
-fn rank(conn: &Connection, lane: Lane, fts: &str) -> Vec<i64> {
-    let Ok(mut st) = conn.prepare(lane.rank_sql()) else {
-        return Vec::new();
-    };
-    let Ok(rows) = st.query_map(rusqlite::params![fts, CANDIDATES], |r| r.get::<_, i64>(0)) else {
-        return Vec::new();
-    };
-    rows.flatten().collect()
+/// Candidates for `fts`, best first — the shared ranker, not a second copy of it.
+///
+/// `search::rank_rowids` returns a `Result` so `cml search` can say "the index is
+/// broken" instead of "no hits". On this path the answer is the opposite: a hook that
+/// fails is a session that breaks, and an empty briefing is the correct degradation.
+/// So the error is swallowed *here*, deliberately and in one place, rather than by
+/// the ranker being written twice with two different failure modes.
+fn rank(conn: &Connection, lane: Lane, fts: &str, semantic: &str, ungated: bool) -> Vec<i64> {
+    crate::search::rank_rowids(conn, fts, semantic, CANDIDATES, ungated, lane).unwrap_or_default()
 }
 
 /// A row that is the prompt itself, asked once before, tells the model nothing that is
@@ -158,45 +155,6 @@ fn query_terms(conn: &Connection, prompt: &str, lane: Lane) -> Option<Vec<String
 /// `exclude_session` drops rows from one session: the live hook excludes the session
 /// being typed in (already on screen), and `cml eval` excludes the session a question
 /// was asked in (the point is whether the answer is findable from somewhere else).
-/// Reciprocal-rank fusion of the BM25 order with an embedding order.
-///
-/// RRF rather than a weighted sum of scores, because BM25 scores and cosine similarities
-/// are on different and non-comparable scales — the same category error as comparing raw
-/// FTS5 `rank` values across two tables. Positions are comparable; the numbers are not.
-///
-/// Degrades to the BM25 order whenever the semantic leg has nothing to say (no model, no
-/// embeddings computed yet), so enabling this can reorder results but can never empty
-/// them.
-fn fuse_vectors(conn: &Connection, prompt: &str, lane: Lane, bm25: Vec<i64>) -> Vec<i64> {
-    let want = bm25.len().max(CANDIDATES as usize);
-    let Ok(sem) = crate::vector::search(conn, prompt, lane, want) else {
-        return bm25;
-    };
-    if sem.is_empty() {
-        return bm25;
-    }
-
-    const K: f32 = 60.0; // conventional RRF damping constant
-    let mut score: HashMap<i64, f32> = HashMap::new();
-    for (i, id) in bm25.iter().enumerate() {
-        *score.entry(*id).or_default() += 1.0 / (K + i as f32 + 1.0);
-    }
-    for (i, (id, _sim)) in sem.iter().enumerate() {
-        *score.entry(*id).or_default() += 1.0 / (K + i as f32 + 1.0);
-    }
-
-    let mut ids: Vec<i64> = score.keys().copied().collect();
-    // Ties break on rowid so the ranking is deterministic run to run; an eval whose
-    // ordering wobbles cannot attribute a score change to the thing being ablated.
-    ids.sort_by(|a, b| {
-        score[b]
-            .partial_cmp(&score[a])
-            .unwrap_or(std::cmp::Ordering::Equal)
-            .then(a.cmp(b))
-    });
-    ids
-}
-
 pub fn retrieve(
     conn: &Connection,
     prompt: &str,
@@ -217,12 +175,13 @@ pub fn retrieve(
         // to be switched off to measure whether it works.
         fts = format!("{{text}} : ({fts})");
     }
-    let mut ranked = rank(conn, lane, &fts);
+    // The embedding leg is fused by the shared ranker when asked for. The C++ passed it
+    // the surviving discriminative terms, not the raw prompt — a whole pasted paragraph
+    // embeds to something no row is near — so this passes the same thing.
+    let semantic = if opts.with_vectors { terms.join(" ") } else { String::new() };
+    let ranked = rank(conn, lane, &fts, &semantic, opts.ungated);
     if ranked.is_empty() {
         return out;
-    }
-    if opts.with_vectors {
-        ranked = fuse_vectors(conn, prompt, lane, ranked);
     }
 
     let prompt_flat = squeeze(&prompt.to_ascii_lowercase(), 400);
@@ -292,7 +251,9 @@ pub fn retrieve(
 /// on exactly the prompts the row lanes correctly stay silent on.
 pub fn scene_hit(conn: &Connection, prompt: &str, exclude_session: &str) -> Option<Hit> {
     let terms = query_terms(conn, prompt, Lane::Conversation)?;
-    let ranked = rank(conn, Lane::Scene, &or_query(&terms));
+    // No semantic leg and no ablation here: a scene is picked by the same lexical
+    // evidence as a row, and the hook is the only caller.
+    let ranked = rank(conn, Lane::Scene, &or_query(&terms), "", false);
     let mut fetch = conn
         .prepare("SELECT title, summary, outcome, session, ts_end FROM scene WHERE rowid=?1")
         .ok()?;
