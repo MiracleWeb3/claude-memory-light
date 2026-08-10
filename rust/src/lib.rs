@@ -36,7 +36,6 @@ pub mod report;
 pub mod search;
 pub mod session;
 pub mod vector;
-pub mod viz;
 
 /// The one error type crossing command boundaries.
 ///
@@ -71,15 +70,14 @@ pub fn command(name: &str) -> Option<(Command, &'static str)> {
         "loops" => (report::loops as Command, "asks that keep coming back unresolved"),
         "eval" => (report::eval as Command, "measure recall quality against known hits"),
         "offload" => (offload::run as Command, "spill oversized tool output to a file"),
-        "map" => (viz::run as Command, "build and open the memory map"),
         _ => return None,
     })
 }
 
 /// Commands in the order `help` lists them.
-pub const COMMANDS: [&str; 17] = [
+pub const COMMANDS: [&str; 16] = [
     "index", "search", "recall", "capture", "nudge", "hint", "state", "consolidate",
-    "distill", "embed", "forget", "stats", "doctor", "loops", "eval", "offload", "map",
+    "distill", "embed", "forget", "stats", "doctor", "loops", "eval", "offload",
 ];
 
 #[cfg(test)]

@@ -7,17 +7,17 @@
 
 <br/>
 
-<img src="https://readme-typing-svg.demolab.com/?font=Fira+Code&size=17&pause=1400&center=true&vCenter=true&width=560&color=EA580C&lines=every+session+becomes+a+star;your+memory%2C+mapped+like+a+galaxy;0+tokens+·+0+daemons+·+1+small+C%2B%2B+binary" alt=""/>
+<img src="https://readme-typing-svg.demolab.com/?font=Fira+Code&size=17&pause=1400&center=true&vCenter=true&width=560&color=EA580C&lines=every+session+already+on+disk%2C+indexed;the+read+half%2C+hooked+and+measured;0+tokens+·+0+daemons+·+1+small+Rust+binary" alt=""/>
 
 <br/>
 
 [![build](https://img.shields.io/github/actions/workflow/status/MiracleWeb3/claude-memory-light/release.yml?style=for-the-badge&logo=githubactions&logoColor=white&label=build)](https://github.com/MiracleWeb3/claude-memory-light/actions)
-[![release](https://img.shields.io/badge/release-v2.9.0-ea580c?style=for-the-badge&logo=github)](https://github.com/MiracleWeb3/claude-memory-light/releases)
+[![release](https://img.shields.io/badge/release-v3.0.0-ea580c?style=for-the-badge&logo=github)](https://github.com/MiracleWeb3/claude-memory-light/releases)
 [![license](https://img.shields.io/badge/license-MIT-blue?style=for-the-badge)](LICENSE)
-[![c++20](https://img.shields.io/badge/c%2B%2B-20-00599c?style=for-the-badge&logo=cplusplus)](https://en.cppreference.com/w/cpp/20)
+[![rust](https://img.shields.io/badge/rust-2021-dea584?style=for-the-badge&logo=rust&logoColor=white)](https://www.rust-lang.org)
 
 
-**[install](#install)** · **[use](#use)** · **[recall](#recall--the-read-half)** · **[the map](#the-map)** · **[how it works](#how-it-works)** · **[learning loop](#the-learning-loop)** · **[wiki](#the-wiki)** · **[vs claude-mem](#vs-claude-mem)** · **[cli](#cli)** · **[faq](#faq)**
+**[install](#install)** · **[use](#use)** · **[recall](#recall--the-read-half)** · **[how it works](#how-it-works)** · **[learning loop](#the-learning-loop)** · **[wiki](#the-wiki)** · **[vs claude-mem](#vs-claude-mem)** · **[cli](#cli)** · **[faq](#faq)**
 
 </div>
 
@@ -26,16 +26,11 @@
 > [!IMPORTANT]
 > Claude Code already writes a transcript of every session to `~/.claude/projects/`. Most memory plugins ignore that file and rebuild capture from scratch: lifecycle hooks feeding a background worker, a vector database, summarization calls billed to your token budget — an elaborate machine for forgetting most of what happened. This tool skips capture and indexes what is already on disk. All of it.
 
-<div align="center">
-<img src="assets/map.png" width="880" alt="the 3D memory map — every message a star"/>
-<br/><sub>the whole brain, live, at 60 fps on the laptop iGPU it was built on — this is <code>--raw</code>, every row plotted. The default view shows only what earned a gist. The glow is the core, red ganglia are sessions, orange and blue are you and Claude, green is curated memory.</sub>
-</div>
-
 The second hit in the demo below is real. The first thing this tool found on my machine was a conversation I'd forgotten, where Claude and I had already evaluated a memory plugin two weeks earlier and reached the same conclusion. That sold me.
 
 ## features
 
-**Search everything, instantly.** Every message of every session, BM25 over FTS5, in milliseconds. `--semantic` adds local vectors for meaning-only queries, so asking about "trackpad dragging" finds the touchpad rows.
+**Search everything, instantly.** Every message of every session — including the tool calls and their output, and including the subagents you fanned out — BM25 over FTS5, in milliseconds. `--semantic` adds local vectors for meaning-only queries, so asking about "trackpad dragging" finds the touchpad rows.
 
 **Retrieval you don't have to remember.** Every prompt queries the index on `UserPromptSubmit`. Your own history arrives as context before Claude answers. There is no command to forget to run.
 
@@ -45,7 +40,6 @@ Around those three:
 
 - a **learning loop** that collects per-turn signals and folds them into memory Claude actually loads
 - a **wiki** of markdown pages, one topic each, Obsidian opens the folder as a vault
-- a **3D map** of the whole thing, one offline HTML file (`cml map`)
 - **chronic loops** (`cml loops`), the asks that keep coming back unresolved
 - **prompt hints** that flag a message as a correction, preference, or decision worth keeping
 - a **durability gate**, so the map holds a few hundred hard-won facts instead of every true sentence
@@ -59,7 +53,7 @@ Nothing runs in the background. The binary executes on a hook and exits in milli
 /plugin install claude-memory-light
 ```
 
-The plugin fetches a prebuilt binary on first run, or builds from source with cmake (needs a C++20 compiler and the sqlite3 + simdjson headers; `curl` is only needed at runtime, and only if you turn on distillation). Then:
+The plugin fetches a prebuilt binary on first run, or builds from source with cargo (needs a Rust toolchain and the sqlite3 headers; `curl` is only needed at runtime, and only if you turn on distillation). Then:
 
 ```bash
 cml index --all   # first full index: 50 sessions ≈ 2 s
@@ -138,7 +132,11 @@ Fires on about half the prompts it sees, mean **2.1** hits, **~550 bytes** injec
 
 ## the learning loop
 
-A Stop hook appends your message from each turn to a per-project inbox file, flagged when it reads like a correction. At session start, once five or more signals accumulate, Claude gets a note telling it to distill them into its persistent memory and clear the inbox. The hooks contain no LLM calls. The distillation happens inside a session you were going to run anyway, where the full context already lives.
+A Stop hook appends your message from each turn to a per-project inbox file, flagged when it reads like a correction. At session start, once five or more signals accumulate, the briefing carries them.
+
+It used to carry a count and a file path instead, with an instruction to go and read them. That reminder fired every session and was correct every time, and the signals still sat there: on the machine this was built on, a dozen of them had survived ninety sessions of being accurately reported. Nothing was broken. Noticing a line and moving on is free, so that is what kept happening. Anything that depends on somebody choosing to invoke it is, in practice, a thing that does not run — which is the same lesson `cml recall` had already learned at 2%, arrived at a second time from the other direction.
+
+So the signals themselves arrive now, grouped with corrections first, capped at 12 of them so the briefing cannot become wallpaper. `cml consolidate` prints the same report on demand, and `--clear` retires the lines it just printed. Neither writes a memory file. Unreviewed facts written into memory by a machine is the failure mode this whole category is prone to, and being pushy about *surfacing* does not require being careless about *writing*. The hooks contain no LLM calls; the distillation happens inside a session you were going to run anyway, where the full context already lives.
 
 That same SessionStart hook also briefs you on what's still open: chronic asks that keep recurring across sessions (the logic behind `cml loops`, capped to the top 3), and a menu of wiki topics on file so Claude knows what it can pull in before re-deriving something already written down. Both are skipped on `resume`/`compact` sources — re-injecting static context on every resume is exactly the bloat this is budgeted against — but the inbox nag above still fires there if it's due. The whole message reports its own size inline (`[context injected: N.NkB]`): measured 1.2kB on a fresh start on this repo's own index, 0.5kB on resume where only the nag can still trigger.
 
@@ -148,25 +146,21 @@ A third hook, sharing `UserPromptSubmit` with recall above, classifies each prom
 
 A folder of markdown files, one page per topic, edited in place when facts change. Old states aren't lost; the transcripts keep them. Obsidian opens the folder as a vault. `cml search <topic> --role wiki` finds pages, and the bundled skill keeps Claude writing them.
 
-## the map
+## the lane nobody could reach
 
-```bash
-cml map          # builds and opens it
+For most of this project's life it indexed 57,683 rows of tool output that `cml search` could not return. Not a broken query: the SQL for that lane was correct and sitting in the search file. Nothing on the command line ever selected it. `--role work` answered **no hits** against a corpus holding 57 matches for the same query, because the flag parser and the ranker had been written at different times and never agreed on what a lane was.
+
+One caller could see those rows, the SessionStart hook, so the feature looked alive from the inside. The person who owned the data could not reach it from a terminal.
+
+Two other holes came out with it. The indexer walked top-level transcripts only, skipping 784 of 1,008 files, which is every subagent — so all the parallel fan-out work was absent from memory. And the Stop hook that collects learning signals had a project filter left over from when the feature was being trialled on one repo, so every other project on the machine recorded nothing.
+
+The fix that mattered was structural rather than a patch. One `Lane` type now feeds both the `--role` parser and the ranker, and both match on it exhaustively, so a lane that exists without a way to reach it fails to compile. `every_lane_is_reachable_from_the_cli` is the test that says so. With no `--role` at all, search ranks every lane together and merges them, because you should not have to know which table holds your answer. `cml doctor` prints the per-lane counts and checks reachability while it runs:
+
+```
+lanes           : conversation 5234 · tools 123374 · scene 72 — all reachable from --role
 ```
 
-Your memory as a navigable 3D brain. Projects orbit the center, sessions cluster around projects, and every fact is a shaded orb colored by role.
-
-The map plots knowledge, not rows. A message earns a point by carrying a durable fact; everything else stays searchable without becoming one. Most rows never earn it. On the corpus this was built against, 1,077 rows produce 369 points. The 708 that stay dark are status reports, mode acknowledgments, and answers to questions that will not come up again. `--raw` puts them all back.
-
-Memory notes and wiki pages link to each other through their `[[wikilinks]]`, so the curated layer renders like Obsidian's graph view, except in three dimensions and sitting next to the conversations it came from. Search flies the camera to matches, chips filter by role, and clicking a node shows the text plus the `cml search` command to pull it up in a terminal.
-
-If the repo you're standing in has a graphify knowledge graph, `--code` renders it as a cyan code constellation beside your conversations — functions, files, and concepts in the same space as the sessions that wrote them. It is opt-in on purpose: the overlay occupies a single orbital slot, a project's worth, while carrying up to 3000 nodes, so enabling it packs a solid sphere in front of the brain. Bare `--code` auto-detects `graphify-out/graph.json`; `--code <path>` points it anywhere. For reading code structure on its own, graphify's own viewer is the better tool.
-
-It boots like a ship computer: a startup sequence, synthesized interface sounds (WebAudio oscillators, no audio files — the mute button remembers), and idle synaptic pulses traveling the links. Hover a node and it grows toward you; click and the thought opens in a fixed reading panel, with a breadcrumb trail — core ▸ project ▸ session ▸ thought — always showing where you are. Esc walks back up. Controls are the standard vocabulary: drag orbits, right-drag pans, the wheel zooms toward your cursor.
-
-The engine is vendored three.js driven by C++. The layout is precomputed at generation time (deterministic radial shells, zero physics in the browser), and every node renders through instanced meshes — the entire brain is about **ten draw calls**, which is why it holds 60 fps on the integrated laptop GPU it was built on. An fps meter sits in the HUD, and an adaptive quality ladder steps down (pixel ratio → sphere detail → effects) on any renderer that can't keep up.
-
-One static HTML file with the render engine vendored in. Works offline, no CDN, no server. Generating 4,000+ nodes takes well under a second.
+Nothing was lost while this was broken; the rows were on disk the whole time. That is the part worth keeping in mind about any memory tool, this one included. Storage is easy to verify and easy to feel good about. Whether you can get anything back out is a separate question, and it wants a separate test.
 
 ## when it breaks
 
@@ -226,7 +220,7 @@ It immediately killed a feature this project had been advertising. `cml eval --v
 | BM25 + doc2query | **40 (14.8%)** | **30 (11.1%)** |
 | \+ embedding rerank | 35 (13.0%) | 21 (7.8%) |
 
-The vector leg was making retrieval **worse** — and the previous version of this section claimed "the vector gap is closed" as a selling point. Four measurements across two corpus states said otherwise, so it was removed from the automatic path. We then wrote a BERT encoder from scratch in C++ (`src/encoder/`, bge-small-en-v1.5 — the model our static one was distilled *from*) to check whether a real contextual model would win. It halved the damage and still lost to plain BM25.
+The vector leg was making retrieval **worse** — and the previous version of this section claimed "the vector gap is closed" as a selling point. Four measurements across two corpus states said otherwise, so it was removed from the automatic path. We then wrote a BERT encoder from scratch (bge-small-en-v1.5 — the model our static one was distilled *from*) to check whether a real contextual model would win. It halved the damage and still lost to plain BM25.
 
 The cause is structural: retrieval requires two shared content words before a row is injected, so a purely semantic match cannot survive the pipeline however the fusion is arranged. Vectors stay for `cml search --semantic`, where they do something BM25 genuinely cannot — asked for *"trackpad dragging"* it returns **touchpad** rows.
 
@@ -255,8 +249,8 @@ Your memory already exists. It's the transcripts. Index them, and don't make a h
 | `cml embed [--all]` | build (or rebuild) the semantic index — one-time init, then automatic |
 | `cml forget <rowid...>` \| `--match "<q>" [--yes]` | purge junk memories, blocklisted so reindexing never resurrects them (`--clear` undoes) |
 | `cml distill [--all] [--limit N]` | optional LLM curation, see below |
-| `cml map [--limit N] [--code [G]] [--no-open] [--raw]` | build + open the 3D memory map; `--raw` plots every row instead of only knowledge, `--code` overlays graphify's code graph (opt-in) |
 | `cml loops [--days N] [--limit K]` | chronic-loop detection: asks recurring across ≥2 sessions in the window, most-recurrent first (default 30 days, top 10) |
+| `cml consolidate [--all] [--clear]` | group pending learning signals into a reviewable report; `--clear` retires only the lines it just reported, and writes no memory files |
 | `cml stats` | row counts, knowledge count, DB size |
 | `cml doctor` | environment check, graphify detection, which binary is running, and what the last background curation run actually did |
 | `cml version` | version of *this* binary — the hooks run an installed copy, so it need not match the repo you are reading |
@@ -300,15 +294,19 @@ One feature is the exception and it is off until you turn it on: **curation** (`
 <summary><b>how does semantic search work without an API?</b></summary>
 <br/>
 
-A Model2Vec static embedding model (~30 MB) runs locally — it's a lookup table plus mean pooling, so embedding is effectively instant even on weak hardware. Vectors sit in a sqlite-vec table inside the same index.db. `cml embed` builds it once (needs network for the one-time model download); after that everything is offline. Queries run both legs — BM25 and KNN — and fuse the rankings. `--keyword` or `--semantic` forces a single leg.
+A Model2Vec static embedding model (~30 MB) runs locally — it's a lookup table plus mean pooling, so embedding is effectively instant even on weak hardware. Vectors sit in a plain table inside the same index.db, little-endian f32, and similarity is a brute-force cosine sweep across them in parallel. At this corpus size that is 5.7 MB of floats and the sweep finishes faster than the query parse in front of it, which is why there's no vector extension and no index to keep warm. `cml embed` builds it once (needs network for the one-time model download); after that everything is offline. Queries run both legs — BM25 and cosine — and fuse the rankings by position, since BM25 scores and cosine similarities are not on a comparable scale. `--keyword` or `--semantic` forces a single leg.
 
 </details>
 
 <details>
-<summary><b>why C++, not Rust?</b></summary>
+<summary><b>why Rust?</b></summary>
 <br/>
 
-It started in Rust. sqlite3 and simdjson are C libraries either way, and the Rust build spent a binding crate (rusqlite) reaching code that's already C. The C++ port calls both directly — same two libraries, no binding layer between the binary and the API it's using. Full port, nothing left in Rust.
+It went Rust, then C++, then back. The C++ round was argued on directness: sqlite3 is a C library either way, and calling it without a binding crate in between is one less layer. That held up. What it cost was everything the compiler stops checking for you, in a binary wired into a hook that runs on every prompt of every session.
+
+The return trip paid for itself in deletions rather than in speed. `sqlite-vec` was 8,315 lines of vendored C carrying a similarity search over 5,576 × 256 floats; that is a rayon cosine sweep now, and it was also the only reason the binary had to load an extension, so `unsafe_code = "forbid"` holds across the whole crate. The hand-rolled SQLite wrapper is rusqlite. The hand-rolled JSON reader is serde_json. The UTF-8 scanning is gone because `str` is UTF-8 by construction.
+
+Counting both trees the same way, production code went 5,649 → 4,230 lines, tests went 1,132 → 1,747, and the vendored C went to zero: 15,096 lines down to 5,977, across 81 files down to 36. 24 crates, which is worth watching in a language where `cargo add` costs nothing at the moment you type it.
 
 </details>
 
@@ -316,7 +314,7 @@ It started in Rust. sqlite3 and simdjson are C libraries either way, and the Rus
 <summary><b>windows?</b></summary>
 <br/>
 
-Untested. The transcript format is the same and the code is portable C++, so it should be close. PRs welcome.
+Untested. The transcript format is the same and nothing here is platform-specific, so it should be close. PRs welcome.
 
 </details>
 
@@ -333,17 +331,18 @@ About 11 MB for 50 sessions / 4,000 messages on my machine. SQLite FTS5 handles 
 - [x] FTS5 index over transcripts, memory notes, wiki
 - [x] learning loop (capture + nudge)
 - [x] plugin packaging, prebuilt binaries
-- [x] 3d memory map with wikilink edges, offline, single file
-- [x] code-graph layer: graphify's `graph.json` renders in the same map
-- [x] `sqlite-vec` semantic search — local Model2Vec embeddings, hybrid RRF, same file, no daemon
-- [x] Rust → C++ port — sqlite3 and simdjson called directly, no binding layer
+- [x] semantic search — local Model2Vec embeddings, hybrid RRF, same file, no daemon
+- [x] C++ → Rust port — `unsafe_code = "forbid"`, the vendored C dropped, 60% less code
 - [x] session briefing — chronic open loops and a wiki topic menu folded into the SessionStart nudge, capped and size-metered
 - [x] `cml loops` — chronic-loop detection: asks that recur across sessions, surfaced from the index
 - [x] `cml hint` — UserPromptSubmit phrase-table classifier that nudges a capture, once per session per category
 - [x] `cml recall` — the read half hooked: every prompt retrieves against the index, so recall stops depending on the model remembering to search
 - [x] `cml eval` — recall@k over your own transcripts, no labelling; the first published retrieval number for a Claude Code memory plugin
 - [x] doc2query — the curator writes how you would *search* for a row, indexed beside it
-- [x] a BERT encoder in C++ (`src/encoder/`) — built to test whether contextual vectors beat BM25 here. They do not. Kept for `--semantic`, dropped from the automatic path.
+- [x] a BERT encoder written from scratch — built to test whether contextual vectors beat BM25 here. They do not. Kept for `--semantic`, dropped from the automatic path.
+- [x] subagent transcripts indexed — 784 of 1,008 files used to be skipped, so every parallel fan-out was missing from memory
+- [x] one `Lane` type across the `--role` parser and the ranker, so an unreachable lane fails to compile instead of quietly answering "no hits"
+- [x] `cml consolidate` — the pending learning signals arrive inside the SessionStart briefing instead of a note telling you to go read them
 - [ ] optional end-of-session digests (batched, single call, opt-in)
 - [ ] windows support
 
@@ -381,4 +380,4 @@ CML_LLM_URL=https://openrouter.ai/api/v1/chat/completions   CML_LLM_MODEL=deepse
 CML_LLM_URL=https://open.bigmodel.cn/api/paas/v4/chat/completions   CML_LLM_MODEL=glm-4-flash
 ```
 
-No key, no calls — the curator is off by default and the brain stays fully local.
+No key, no calls — the curator is off by default and everything stays on your machine.

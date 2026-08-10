@@ -1,6 +1,6 @@
 #!/bin/sh
 # claude-memory-light bootstrap: resolve the cml binary, then exec it.
-# Resolution order: installed binary -> PATH -> prebuilt release download -> cmake build.
+# Resolution order: installed binary -> PATH -> prebuilt release download -> cargo build.
 # Design law: a memory hook must NEVER block or break the session — this script
 # always exits 0 and emits valid passthrough JSON for nudge even when nothing works.
 
@@ -22,11 +22,12 @@ if [ ! -x "$BIN" ]; then
     fi
 fi
 
-# Last resort: build from source. Needs cmake, a C++20 compiler, and the sqlite3 and
-# simdjson headers; sqlite-vec is vendored in the tree.
-if [ ! -x "$BIN" ] && command -v cmake >/dev/null 2>&1; then
-    (cd "$ROOT/cpp" && cmake -S . -B build >/dev/null 2>&1 && cmake --build build -j2 >/dev/null 2>&1) \
-        && cp "$ROOT/cpp/build/cml" "$BIN_DIR/cml" 2>/dev/null \
+# Last resort: build from source. Needs a Rust toolchain and libsqlite3 headers.
+# -j2 because this can fire on a laptop mid-session, and a build that eats every core
+# is a build the user feels.
+if [ ! -x "$BIN" ] && command -v cargo >/dev/null 2>&1; then
+    (cd "$ROOT/rust" && cargo build --release -j2 >/dev/null 2>&1) \
+        && cp "$ROOT/rust/target/release/cml" "$BIN_DIR/cml" 2>/dev/null \
         && chmod +x "$BIN_DIR/cml" && BIN="$BIN_DIR/cml"
 fi
 
