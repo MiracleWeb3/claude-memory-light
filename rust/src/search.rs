@@ -318,7 +318,10 @@ pub fn rank_rowids(
     let gated = !fts.is_empty() && !ungated;
     // BTreeMap, not HashMap: its iteration order is rowid order, so the stable sort
     // below breaks score ties by rowid for free and the same query on the same
-    // database prints the same list every time.
+    // database prints the same list every time. The sort also names that tie-break
+    // explicitly, so swapping this container back to a HashMap would cost performance
+    // rather than silently making the ordering random — which is the failure the C++
+    // tree records having already shipped once: five runs, three different orderings.
     let mut fused: BTreeMap<i64, f64> = BTreeMap::new();
     for (pos, id) in keyword.iter().enumerate() {
         *fused.entry(*id).or_default() += 1.0 / (RRF_K + pos as f64);
@@ -331,7 +334,7 @@ pub fn rank_rowids(
     }
 
     let mut ranked: Vec<(i64, f64)> = fused.into_iter().collect();
-    ranked.sort_by(|a, b| b.1.total_cmp(&a.1));
+    ranked.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
     Ok(ranked.into_iter().map(|(id, _)| id).collect())
 }
 
