@@ -56,9 +56,9 @@ pub fn command(name: &str) -> Option<(Command, &'static str)> {
     Some(match name {
         "index" => (index::run as Command, "scan transcripts and notes into the index"),
         "search" => (search::run as Command, "search every lane: talk, tools, scenes"),
-        "recall" => (recall::run as Command, "hook: inject relevant memory at SessionStart"),
-        "capture" => (session::capture as Command, "hook: record this turn's signal"),
-        "nudge" => (session::nudge as Command, "hook: consolidation reminder"),
+        "recall" => (recall::run as Command, "hook: retrieve against each prompt (UserPromptSubmit)"),
+        "capture" => (session::capture as Command, "hook: record this turn's signal (Stop)"),
+        "nudge" => (session::nudge as Command, "hook: the SessionStart briefing"),
         "hint" => (session::hint as Command, "hook: per-session hint state"),
         "state" => (session::state as Command, "standing context for a project"),
         "consolidate" => (session::consolidate as Command, "promote inbox signals into memory"),

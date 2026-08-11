@@ -17,7 +17,7 @@
 [![rust](https://img.shields.io/badge/rust-2021-dea584?style=for-the-badge&logo=rust&logoColor=white)](https://www.rust-lang.org)
 
 
-**[install](#install)** · **[use](#use)** · **[recall](#recall--the-read-half)** · **[how it works](#how-it-works)** · **[learning loop](#the-learning-loop)** · **[wiki](#the-wiki)** · **[vs claude-mem](#vs-claude-mem)** · **[cli](#cli)** · **[faq](#faq)**
+**[install](#install)** · **[use](#use)** · **[how it works](#how-it-works)** · **[recall](#recall--the-read-half)** · **[learning loop](#the-learning-loop)** · **[wiki](#the-wiki)** · **[the stranded lane](#the-lane-nobody-could-reach)** · **[vs claude-mem](#vs-claude-mem)** · **[the number](#the-number)** · **[cli](#cli)** · **[faq](#faq)**
 
 </div>
 
@@ -26,7 +26,7 @@
 > [!IMPORTANT]
 > Claude Code already writes a transcript of every session to `~/.claude/projects/`. Most memory plugins ignore that file and rebuild capture from scratch: lifecycle hooks feeding a background worker, a vector database, summarization calls billed to your token budget — an elaborate machine for forgetting most of what happened. This tool skips capture and indexes what is already on disk. All of it.
 
-The second hit in the demo below is real. The first thing this tool found on my machine was a conversation I'd forgotten, where Claude and I had already evaluated a memory plugin two weeks earlier and reached the same conclusion. That sold me.
+The first thing this tool found on my machine was a conversation I'd forgotten, where Claude and I had already evaluated a memory plugin two weeks earlier and reached the same conclusion. That sold me.
 
 ## features
 
@@ -82,10 +82,10 @@ Three bundled skills teach Claude to search memory before re-solving old problem
 
 ## how it works
 
-Everything orbits one SQLite file. Sources feed it, hooks keep it fresh, search beams out of it.
+Three stores, and a hook on both sides of each one. Nothing here waits to be asked.
 
 <div align="center">
-<img src="assets/architecture.svg" width="880" alt="orbital architecture"/>
+<img src="assets/architecture.svg" width="880" alt="Every store cml writes, the hook that writes it, and the hook that reads it back"/>
 </div>
 
 <details>
@@ -96,6 +96,8 @@ Everything orbits one SQLite file. Sources feed it, hooks keep it fresh, search 
 ├── index.db          # the FTS5 index (disposable, rebuilds in seconds)
 ├── inbox/            # learning-loop signals, one file per project
 │   └── myapp.md
+├── spill/            # tool output too big for the context window, kept verbatim
+│   └── <session>/
 ├── wiki/             # your wiki pages
 │   └── topic.md
 └── bin/cml           # the binary (installed by the bootstrap)
@@ -251,6 +253,7 @@ Your memory already exists. It's the transcripts. Index them, and don't make a h
 | `cml distill [--all] [--limit N]` | optional LLM curation, see below |
 | `cml loops [--days N] [--limit K]` | chronic-loop detection: asks recurring across ≥2 sessions in the window, most-recurrent first (default 30 days, top 10) |
 | `cml consolidate [--all] [--clear]` | group pending learning signals into a reviewable report; `--clear` retires only the lines it just reported, and writes no memory files |
+| `cml state [--project P] [--budget N]` | the standing brief for a project: what is still open, what recently got done |
 | `cml stats` | row counts, knowledge count, DB size |
 | `cml doctor` | environment check, graphify detection, which binary is running, and what the last background curation run actually did |
 | `cml version` | version of *this* binary — the hooks run an installed copy, so it need not match the repo you are reading |
@@ -258,6 +261,7 @@ Your memory already exists. It's the transcripts. Index them, and don't make a h
 | `cml nudge` | *(hook)* SessionStart briefing: learning-inbox nag (always eligible), plus open loops and wiki topics (skipped on resume/compact) |
 | `cml hint` | *(hook)* UserPromptSubmit: phrase-table classifier nudges a capture, once per session per category |
 | `cml recall` | *(hook)* UserPromptSubmit: retrieves against the prompt and injects the top matches, gated on rarity, substance, overlap, echo and novelty |
+| `cml offload` | *(hook)* PostToolUse: spills oversized tool output to `spill/<session>/` and leaves a one-line marker in its place |
 | `cml eval [-k N] [--limit N] [--vectors] [--no-asks]` | recall@k against your own history; the flags ablate the embedding leg and the doc2query expansions so any claim here stays checkable |
 
 <kbd>CML_HOME</kbd> moves the data directory (default `~/.claude/claude-memory-light`). <kbd>CML_NUDGE_THRESHOLD</kbd> tunes the nudge, default 5. <kbd>CML_EMBED_MODEL</kbd> swaps the embedding model: `minishlab/potion-base-32M` for better recall, `minishlab/potion-multilingual-128M` for non-English corpora. Run `cml embed --all` after switching.
@@ -267,6 +271,27 @@ Your memory already exists. It's the transcripts. Index them, and don't make a h
 `cml distill` is optional. A cheap external model (DeepSeek by default) judges each row on two independent questions: is there content here, and is it worth a permanent point on the map? A row that fails the second still stays searchable, it just carries no gist.
 
 Once a key sits in `llm.key`, `cml index` starts this **detached in the background**. It costs about 20 seconds a row, so it can never run on the Stop hook's clock. Whatever the last run did shows up in `cml doctor`.
+
+<details>
+<summary><b>bring your own curator</b></summary>
+<br/>
+
+The distillation layer speaks to any OpenAI-compatible `/chat/completions` endpoint. Drop an API key into `~/.claude/claude-memory-light/llm.key` and it activates; two env vars point it anywhere:
+
+```bash
+# DeepSeek (default — nothing to configure but the key)
+CML_LLM_URL=https://api.deepseek.com/chat/completions   CML_LLM_MODEL=deepseek-v4-pro
+
+# OpenRouter — any model on the router
+CML_LLM_URL=https://openrouter.ai/api/v1/chat/completions   CML_LLM_MODEL=deepseek/deepseek-chat
+
+# GLM / Zhipu
+CML_LLM_URL=https://open.bigmodel.cn/api/paas/v4/chat/completions   CML_LLM_MODEL=glm-4-flash
+```
+
+No key, no calls — the curator is off by default and everything stays on your machine.
+
+</details>
 
 ## faq
 
@@ -364,20 +389,3 @@ About 11 MB for 50 sessions / 4,000 messages on my machine. SQLite FTS5 handles 
 **[⬆ back to top](#top)**
 
 </div>
-
-## bring your own curator
-
-The optional distillation layer speaks to any OpenAI-compatible `/chat/completions` endpoint. Drop an API key into `~/.claude/claude-memory-light/llm.key` and it activates; two env vars point it anywhere:
-
-```bash
-# DeepSeek (default — nothing to configure but the key)
-CML_LLM_URL=https://api.deepseek.com/chat/completions   CML_LLM_MODEL=deepseek-v4-pro
-
-# OpenRouter — any model on the router
-CML_LLM_URL=https://openrouter.ai/api/v1/chat/completions   CML_LLM_MODEL=deepseek/deepseek-chat
-
-# GLM / Zhipu
-CML_LLM_URL=https://open.bigmodel.cn/api/paas/v4/chat/completions   CML_LLM_MODEL=glm-4-flash
-```
-
-No key, no calls — the curator is off by default and everything stays on your machine.

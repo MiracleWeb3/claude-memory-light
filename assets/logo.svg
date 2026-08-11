@@ -5,7 +5,7 @@
       <stop offset="1" stop-color="#ea580c"/>
     </linearGradient>
   </defs>
-  <g stroke="#8b949e" stroke-width="18" fill="none" stroke-linecap="round">
+  <g stroke="#6e7781" stroke-width="18" fill="none" stroke-linecap="round">
     <path d="M120 132 v216 c0 36 54 64 120 64 s120 -28 120 -64 v-216"/>
     <ellipse cx="240" cy="132" rx="120" ry="58"/>
     <path d="M120 240 c0 36 54 64 120 64 s120 -28 120 -64" opacity="0.5"/>

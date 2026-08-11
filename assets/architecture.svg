@@ -1,81 +1,115 @@
-<svg width="900" height="460" viewBox="0 0 900 460" xmlns="http://www.w3.org/2000/svg" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12">
+<svg width="900" height="450" viewBox="0 0 900 450" xmlns="http://www.w3.org/2000/svg" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="11" role="img" aria-label="Every store cml writes, the hook that writes it, and the hook that reads it back.">
+  <title>claude-memory-light — three stores, each hooked on both sides</title>
   <defs>
-    <radialGradient id="sun" cx="0.4" cy="0.35">
-      <stop offset="0" stop-color="#fdba74"/>
-      <stop offset="0.55" stop-color="#f97316"/>
-      <stop offset="1" stop-color="#c2410c"/>
-    </radialGradient>
-    <marker id="arr" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+    <marker id="a" viewBox="0 0 8 8" refX="7.2" refY="4" markerWidth="6" markerHeight="6" orient="auto">
       <path d="M0 0 L8 4 L0 8 Z" fill="#8b949e"/>
     </marker>
-    <marker id="arrO" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+    <marker id="ao" viewBox="0 0 8 8" refX="7.2" refY="4" markerWidth="6" markerHeight="6" orient="auto">
       <path d="M0 0 L8 4 L0 8 Z" fill="#f97316"/>
     </marker>
   </defs>
 
-  <rect width="900" height="460" rx="12" fill="#0d1117" stroke="#30363d"/>
+  <rect width="900" height="450" rx="14" fill="#0d1117" stroke="#30363d"/>
 
-  <!-- starfield -->
-  <g fill="#e6edf3">
-    <circle cx="60" cy="50" r="1.2" opacity=".5"/><circle cx="140" cy="390" r="1" opacity=".3"/>
-    <circle cx="230" cy="60" r="1.4" opacity=".4"/><circle cx="330" cy="420" r="1" opacity=".35"/>
-    <circle cx="420" cy="40" r="1" opacity=".5"/><circle cx="530" cy="425" r="1.3" opacity=".3"/>
-    <circle cx="640" cy="55" r="1" opacity=".45"/><circle cx="750" cy="400" r="1.2" opacity=".35"/>
-    <circle cx="830" cy="80" r="1.4" opacity=".5"/><circle cx="870" cy="300" r="1" opacity=".3"/>
-    <circle cx="90" cy="200" r="1" opacity=".35"/><circle cx="805" cy="215" r="1" opacity=".4"/>
-    <circle cx="500" cy="90" r="1" opacity=".3"/><circle cx="380" cy="390" r="1.2" opacity=".4"/>
-    <circle cx="42" cy="330" r="1.3" opacity=".4"/><circle cx="695" cy="330" r="1" opacity=".3"/>
+  <!-- band headers -->
+  <g font-size="10" letter-spacing="1.4">
+    <text x="28" y="36" fill="#8b949e">WRITTEN BY A HOOK</text>
+    <text x="326" y="36" fill="#8b949e">WHERE IT LANDS</text>
+    <text x="636" y="36" fill="#f97316">READ BACK BY A HOOK</text>
+  </g>
+  <line x1="28" y1="45" x2="872" y2="45" stroke="#21262d"/>
+
+  <!-- ─────────────────────────  row 1 · index.db  ───────────────────────── -->
+  <text x="28" y="76" fill="#8b949e" font-size="10">Stop</text>
+  <text x="28" y="95" fill="#e6edf3" font-size="12.5">cml index</text>
+  <g fill="#8b949e" font-size="10">
+    <text x="28" y="118">reads what is already on disk:</text>
+    <text x="28" y="135" fill="#8b949e">~/.claude/projects/**.jsonl</text>
+    <text x="28" y="151">every session, every subagent,</text>
+    <text x="28" y="166">tool calls and their output</text>
+    <text x="28" y="188" fill="#8b949e">memory/*.md · wiki/*.md</text>
   </g>
 
-  <!-- orbits -->
-  <ellipse cx="450" cy="230" rx="165" ry="100" fill="none" stroke="#30363d" stroke-dasharray="3 5"/>
-  <ellipse cx="450" cy="230" rx="300" ry="180" fill="none" stroke="#21262d" stroke-dasharray="3 7"/>
+  <line x1="290" y1="130" x2="322" y2="130" stroke="#8b949e" marker-end="url(#a)"/>
 
-  <!-- the sun: the index -->
-  <circle cx="450" cy="230" r="40" fill="url(#sun)"/>
-  <text x="450" y="226" text-anchor="middle" fill="#0d1117" font-weight="700">index.db</text>
-  <text x="450" y="241" text-anchor="middle" fill="#7c2d12" font-size="10">SQLite FTS5</text>
+  <rect x="326" y="56" width="270" height="152" rx="8" fill="#161b22" stroke="#f97316" stroke-width="1.2"/>
+  <text x="342" y="78" fill="#f0883e" font-size="13" font-weight="700">index.db</text>
+  <text x="342" y="93" fill="#8b949e" font-size="10">one SQLite file · FTS5 · no extension</text>
+  <text x="342" y="109" fill="#8b949e" font-size="9">table</text>
+  <text x="398" y="109" fill="#8b949e" font-size="9">--role</text>
+  <line x1="342" y1="116" x2="580" y2="116" stroke="#30363d"/>
+  <g font-size="10.5">
+    <text x="342" y="134" fill="#79c0ff">mem</text>
+    <text x="398" y="134" fill="#8b949e">talk</text>
+    <text x="444" y="134" fill="#c9d1d9">prompts + replies</text>
 
-  <!-- inner orbit: the three memory sources -->
-  <circle cx="300" cy="185" r="15" fill="#60a5fa"/>
-  <text x="300" y="158" text-anchor="middle" fill="#60a5fa">transcripts</text>
-  <text x="300" y="145" text-anchor="middle" fill="#8b949e" font-size="10">~/.claude/projects/**.jsonl</text>
-  <line x1="314" y1="191" x2="409" y2="222" stroke="#8b949e" stroke-width="1" marker-end="url(#arr)" opacity=".7"/>
+    <text x="342" y="153" fill="#7ee787">work</text>
+    <text x="398" y="153" fill="#8b949e">ran</text>
+    <text x="444" y="153" fill="#c9d1d9">tool calls + output</text>
 
-  <circle cx="505" cy="322" r="11" fill="#34d399"/>
-  <text x="505" y="350" text-anchor="middle" fill="#34d399">memory notes</text>
-  <line x1="497" y1="313" x2="465" y2="266" stroke="#8b949e" stroke-width="1" marker-end="url(#arr)" opacity=".7"/>
+    <text x="342" y="172" fill="#d2a8ff">scene</text>
+    <text x="398" y="172" fill="#8b949e">scene</text>
+    <text x="444" y="172" fill="#c9d1d9">session summaries</text>
 
-  <circle cx="560" cy="150" r="11" fill="#c084fc"/>
-  <text x="560" y="127" text-anchor="middle" fill="#c084fc">wiki [[pages]]</text>
-  <line x1="550" y1="158" x2="486" y2="205" stroke="#8b949e" stroke-width="1" marker-end="url(#arr)" opacity=".7"/>
-
-  <!-- outer orbit: the code moon (optional) -->
-  <circle cx="718" cy="150" r="13" fill="none" stroke="#22d3ee" stroke-dasharray="2 3"/>
-  <circle cx="718" cy="150" r="8" fill="#22d3ee"/>
-  <text x="718" y="121" text-anchor="middle" fill="#22d3ee">code graph</text>
-  <text x="718" y="177" text-anchor="middle" fill="#8b949e" font-size="10">graphify-out/graph.json · optional</text>
-  <line x1="705" y1="157" x2="494" y2="222" stroke="#22d3ee" stroke-width="1" stroke-dasharray="2 4" marker-end="url(#arr)" opacity=".6"/>
-
-  <!-- comets: the hooks -->
-  <g opacity=".9">
-    <line x1="120" y1="315" x2="163" y2="298" stroke="#f97316" stroke-width="1" opacity=".3"/>
-    <line x1="130" y1="309" x2="167" y2="296" stroke="#f97316" stroke-width="1" opacity=".5"/>
-    <circle cx="172" cy="294" r="5" fill="#f97316"/>
-    <text x="185" y="298" fill="#8b949e">Stop hook → <tspan fill="#e6edf3">cml index</tspan> · 17 ms</text>
-  </g>
-  <g opacity=".9">
-    <line x1="105" y1="112" x2="148" y2="122" stroke="#fb923c" stroke-width="1" opacity=".3"/>
-    <line x1="115" y1="114" x2="152" y2="123" stroke="#fb923c" stroke-width="1" opacity=".5"/>
-    <circle cx="157" cy="124" r="5" fill="#fb923c"/>
-    <text x="170" y="128" fill="#8b949e">Stop hook → <tspan fill="#e6edf3">cml capture</tspan> → inbox</text>
+    <text x="342" y="194" fill="#8b949e">emb</text>
+    <text x="398" y="194" fill="#8b949e">—</text>
+    <text x="444" y="194" fill="#8b949e">vectors, f32 blob</text>
   </g>
 
-  <!-- the beam out: search -->
-  <line x1="487" y1="248" x2="676" y2="374" stroke="#f97316" stroke-width="1.5" marker-end="url(#arrO)"/>
-  <text x="688" y="380" fill="#e6edf3"><tspan fill="#f97316">cml search</tspan> → recall</text>
-  <text x="688" y="396" fill="#8b949e" font-size="10">milliseconds · 0 tokens</text>
+  <line x1="600" y1="130" x2="632" y2="130" stroke="#f97316" marker-end="url(#ao)"/>
 
-  <!-- footer note -->
-  <text x="450" y="440" text-anchor="middle" fill="#484f58" font-size="10">no daemons anywhere in this picture — the binary runs on a hook and exits</text>
+  <g>
+    <text x="636" y="76" fill="#8b949e" font-size="10">UserPromptSubmit</text>
+    <text x="636" y="95" fill="#e6edf3" font-size="12.5">cml recall</text>
+    <text x="636" y="111" fill="#8b949e" font-size="10">gated hits, injected before Claude answers</text>
+    <text x="636" y="131" fill="#e6edf3" font-size="12.5">cml hint</text>
+    <text x="636" y="147" fill="#8b949e" font-size="10">nudges a capture, once per category</text>
+
+    <text x="636" y="172" fill="#8b949e" font-size="10">your terminal</text>
+    <text x="636" y="191" fill="#e6edf3" font-size="12.5">cml search · loops · eval · stats</text>
+  </g>
+
+  <!-- ─────────────────────────  row 2 · inbox  ───────────────────────── -->
+  <line x1="28" y1="228" x2="872" y2="228" stroke="#21262d"/>
+
+  <text x="28" y="252" fill="#8b949e" font-size="10">Stop</text>
+  <text x="28" y="271" fill="#e6edf3" font-size="12.5">cml capture</text>
+  <text x="28" y="288" fill="#8b949e" font-size="10">this turn's message, flagged when</text>
+  <text x="28" y="303" fill="#8b949e" font-size="10">it reads like a correction</text>
+
+  <line x1="290" y1="275" x2="322" y2="275" stroke="#8b949e" marker-end="url(#a)"/>
+
+  <rect x="326" y="246" width="270" height="62" rx="8" fill="#161b22" stroke="#30363d"/>
+  <text x="342" y="270" fill="#c9d1d9" font-size="12.5">inbox/&lt;project&gt;.md</text>
+  <text x="342" y="290" fill="#8b949e" font-size="10">plain markdown, one file per project</text>
+
+  <line x1="600" y1="275" x2="632" y2="275" stroke="#f97316" marker-end="url(#ao)"/>
+
+  <text x="636" y="252" fill="#8b949e" font-size="10">SessionStart</text>
+  <text x="636" y="271" fill="#e6edf3" font-size="12.5">cml nudge</text>
+  <text x="636" y="288" fill="#8b949e" font-size="10">the signals themselves arrive in the</text>
+  <text x="636" y="303" fill="#8b949e" font-size="10">briefing — with open loops and wiki topics</text>
+
+  <!-- ─────────────────────────  row 3 · spill  ───────────────────────── -->
+  <line x1="28" y1="330" x2="872" y2="330" stroke="#21262d"/>
+
+  <text x="28" y="354" fill="#8b949e" font-size="10">PostToolUse</text>
+  <text x="28" y="373" fill="#e6edf3" font-size="12.5">cml offload</text>
+  <text x="28" y="390" fill="#8b949e" font-size="10">oversized tool output, condensed</text>
+  <text x="28" y="405" fill="#8b949e" font-size="10">before it reaches the context window</text>
+
+  <line x1="290" y1="377" x2="322" y2="377" stroke="#8b949e" marker-end="url(#a)"/>
+
+  <rect x="326" y="348" width="270" height="62" rx="8" fill="#161b22" stroke="#30363d"/>
+  <text x="342" y="372" fill="#c9d1d9" font-size="12.5">spill/&lt;session&gt;/*.txt</text>
+  <text x="342" y="392" fill="#8b949e" font-size="10">verbatim; nothing is thrown away</text>
+
+  <line x1="600" y1="377" x2="632" y2="377" stroke="#f97316" marker-end="url(#ao)"/>
+
+  <text x="636" y="354" fill="#8b949e" font-size="10">the marker left behind</text>
+  <text x="636" y="373" fill="#e6edf3" font-size="11.5">⟨cml: 79 lines elided · full: …⟩</text>
+  <text x="636" y="390" fill="#8b949e" font-size="10">one Read away when it turns out to matter</text>
+
+  <!-- footer -->
+  <text x="450" y="435" text-anchor="middle" fill="#8b949e" font-size="10">every box above is a process that starts, writes, and exits — no daemon, no worker, no port</text>
 </svg>
