@@ -1,7 +1,7 @@
 <a name="top"></a>
 <div align="center">
 
-<img src="https://capsule-render.vercel.app/api?type=waving&height=180&color=gradient&customColorList=12&text=claude-memory-light&fontSize=44&fontColor=ffffff&animation=fadeIn&fontAlignY=36&desc=full%20memory%20for%20Claude%20Code&descSize=18&descAlignY=56" width="100%" alt=""/>
+<img src="https://capsule-render.vercel.app/api?type=waving&height=180&color=gradient&customColorList=12&text=claude-memory-light&fontSize=44&fontColor=ffffff&animation=fadeIn&fontAlignY=36&desc=full%20memory%20for%20every%20coding%20agent&descSize=18&descAlignY=56" width="100%" alt=""/>
 
 <img src="assets/logo.svg" width="150" alt="cml logo"/>
 
@@ -12,12 +12,12 @@
 <br/>
 
 [![build](https://img.shields.io/github/actions/workflow/status/MiracleWeb3/claude-memory-light/release.yml?style=for-the-badge&logo=githubactions&logoColor=white&label=build)](https://github.com/MiracleWeb3/claude-memory-light/actions)
-[![release](https://img.shields.io/badge/release-v3.0.0-ea580c?style=for-the-badge&logo=github)](https://github.com/MiracleWeb3/claude-memory-light/releases)
+[![release](https://img.shields.io/badge/release-v3.1.0-ea580c?style=for-the-badge&logo=github)](https://github.com/MiracleWeb3/claude-memory-light/releases)
 [![license](https://img.shields.io/badge/license-MIT-blue?style=for-the-badge)](LICENSE)
 [![rust](https://img.shields.io/badge/rust-2021-dea584?style=for-the-badge&logo=rust&logoColor=white)](https://www.rust-lang.org)
 
 
-**[install](#install)** · **[use](#use)** · **[how it works](#how-it-works)** · **[recall](#recall--the-read-half)** · **[learning loop](#the-learning-loop)** · **[wiki](#the-wiki)** · **[the stranded lane](#the-lane-nobody-could-reach)** · **[vs claude-mem](#vs-claude-mem)** · **[the number](#the-number)** · **[cli](#cli)** · **[faq](#faq)**
+**[install](#install)** · **[share](#sharing-memory)** · **[use](#use)** · **[how it works](#how-it-works)** · **[recall](#recall--the-read-half)** · **[learning loop](#the-learning-loop)** · **[wiki](#the-wiki)** · **[the stranded lane](#the-lane-nobody-could-reach)** · **[vs claude-mem](#vs-claude-mem)** · **[the number](#the-number)** · **[cli](#cli)** · **[faq](#faq)**
 
 </div>
 
@@ -36,7 +36,11 @@ The first thing this tool found on my machine was a conversation I'd forgotten, 
 
 **A published retrieval number.** `cml eval` measures recall@k against your real history, no labelling required. As far as I can tell it is the only such figure any Claude Code memory plugin publishes.
 
-Around those three:
+**Every harness, one memory.** Claude Code, jcode, opencode and Codex keep their history in four different places and four different formats. `cml index` reads all of them into one index, so a thing you worked out in one tool is findable from another. `cml harnesses` prints what is detected and what works with it, including the column where the answer is no.
+
+**Memory you can hand to another person.** Your friend runs `cml share --session <id>`, sends you one file, you run `cml import`. Their conversation is searchable in your history and marked with their name on every line. Secrets are stripped on the way out by default.
+
+Around those:
 
 - a **learning loop** that collects per-turn signals and folds them into memory Claude actually loads
 - a **wiki** of markdown pages, one topic each, Obsidian opens the folder as a vault
@@ -44,24 +48,60 @@ Around those three:
 - **prompt hints** that flag a message as a correction, preference, or decision worth keeping
 - a **durability gate**, so the map holds a few hundred hard-won facts instead of every true sentence
 
-Nothing runs in the background. The binary executes on a hook and exits in milliseconds; RAM at rest is zero. One SQLite file, on your machine, that never leaves it.
+Nothing runs in the background. The binary executes on a hook and exits in milliseconds; RAM at rest is zero. One SQLite file, on your machine, that leaves it only when you run `share`.
 
 ## install
+
+One command, every harness on the machine:
+
+```bash
+cml install          # detects what is here, wires each one, backs up first
+cml install --dry-run  # or see what it would change, and change nothing
+cml index --all      # backfill history: 1,523 sessions ≈ 5 min, then incremental
+```
+
+Still a Claude Code plugin, if that is all you want:
 
 ```
 /plugin marketplace add MiracleWeb3/claude-memory-light
 /plugin install claude-memory-light
 ```
 
-The plugin fetches a prebuilt binary on first run, or builds from source with cargo (needs a Rust toolchain and the sqlite3 headers; `curl` is only needed at runtime, and only if you turn on distillation). Then:
+What each harness actually gets:
 
-```bash
-cml index --all   # first full index: 50 sessions ≈ 2 s
-cml doctor        # sanity check
-```
+| harness | index | recall | capture | how it is wired |
+|---|---|---|---|---|
+| Claude Code | yes | yes | yes | `settings.json` hooks |
+| Codex CLI | yes | yes | yes | `config.toml` hooks |
+| jcode | yes | **no** | yes | `[hooks]` table |
+| opencode | yes | **no** | yes | MCP server |
+
+**recall** means memory arrives before the model answers, with nothing to run. Where it says no, the harness has no prompt-injection hook at all: jcode hands hooks their data in environment variables and discards stdout, so nothing a hook prints can reach the prompt. For those, `cml mcp` serves `memory_search` over stdio and the agent calls it.
+
+`cml uninstall` removes exactly what `install` added, and nothing you wrote by hand. Every config is parsed and rewritten by identity rather than by regex, and backed up first.
 
 > [!WARNING]
 > Claude Code deletes transcripts after about 30 days by default. Set `"cleanupPeriodDays": 3650` in `~/.claude/settings.json` or your memory has an expiry date.
+
+## sharing memory
+
+Two commands, one file between them.
+
+```bash
+# your friend, on their machine
+cml share --session ses_abc --dry-run    # what would leave, and what got scrubbed
+cml share --session ses_abc --peer sam   # -> ses_abc.cmlpack
+
+# you, on yours
+cml import ses_abc.cmlpack
+cml forget --from sam                    # and it is gone again, exactly
+```
+
+Imported rows are searchable immediately and printed with `[sam]` in front, so a stranger's conclusion about a different codebase can never be mistaken for your own.
+
+**What is stripped before a bundle leaves the machine**, by default: vendor API keys (Anthropic, OpenAI, AWS, GitHub, GitLab, Slack, Google, HuggingFace), PEM private-key blocks, JWTs, `Authorization` headers, `KEY=value` assignments whose key names a secret and whose value is opaque, and absolute home paths, which become `~`. `--dry-run` prints the count per class before anything is written. `--no-redact` exists and is not the default for a reason.
+
+Redaction runs over the exported copy only; your own index is never rewritten. A false-positive corpus (git hashes, UUIDs, minified JS, base64 images, `PATH=`) is part of the test suite, because a redactor people switch off protects nothing.
 
 ## use
 
@@ -246,10 +286,16 @@ Your memory already exists. It's the transcripts. Index them, and don't make a h
 
 | command | what it does |
 |---|---|
-| `cml index [--all]` | incremental (or full) reindex of transcripts, memory notes, wiki |
+| `cml index [--all] [--harness ID]` | incremental (or full) reindex of every detected harness, memory notes, wiki |
+| `cml install [--harness ID] [--dry-run]` | wire cml into every agent harness on the machine, idempotently |
+| `cml uninstall [--harness ID]` | remove exactly what `install` added, and nothing you wrote |
+| `cml harnesses` | what is detected, and what index/recall/capture each one really supports |
+| `cml share --session ID \| --project P [--peer NAME] [--dry-run] [--no-redact]` | export a conversation for someone else, secrets scrubbed by default |
+| `cml import <file.cmlpack> [--as NAME] [--dry-run]` | take in a peer's bundle; rows are marked `[name]` at search time |
+| `cml mcp` | serve `memory_search` over stdio JSON-RPC, for harnesses that cannot inject |
 | `cml search <terms> [--project P] [--role R] [--limit N] [--semantic\|--keyword]` | hybrid ranked search |
 | `cml embed [--all]` | build (or rebuild) the semantic index — one-time init, then automatic |
-| `cml forget <rowid...>` \| `--match "<q>" [--yes]` | purge junk memories, blocklisted so reindexing never resurrects them (`--clear` undoes) |
+| `cml forget <rowid...>` \| `--match "<q>" [--yes]` \| `--from <peer>` | purge junk memories, blocklisted so reindexing never resurrects them (`--clear` undoes); `--from` removes exactly what a peer's import added |
 | `cml distill [--all] [--limit N]` | optional LLM curation, see below |
 | `cml loops [--days N] [--limit K]` | chronic-loop detection: asks recurring across ≥2 sessions in the window, most-recurrent first (default 30 days, top 10) |
 | `cml consolidate [--all] [--clear]` | group pending learning signals into a reviewable report; `--clear` retires only the lines it just reported, and writes no memory files |

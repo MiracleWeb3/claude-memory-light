@@ -48,8 +48,11 @@ impl Lane {
     /// is per-lane rather than one shared SELECT.
     pub const fn columns(self) -> &'static str {
         match self {
-            Lane::Conversation | Lane::Tools => "text, role, project, session, ts",
-            Lane::Scene => "summary, title, project, session, ts_start",
+            // `file` last, and last on purpose: it is not printed, it is the key
+            // that says whose row this is. `search` joins it against `origin` to
+            // mark an imported hit.
+            Lane::Conversation | Lane::Tools => "text, role, project, session, ts, file",
+            Lane::Scene => "summary, title, project, session, ts_start, ''",
         }
     }
 

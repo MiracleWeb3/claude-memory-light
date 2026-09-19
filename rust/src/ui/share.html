@@ -1,0 +1,627 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>cml · release a chat</title>
+<style>
+/* ─────────────────────────────────────────────────────────────────────────
+   The darkroom.
+
+   This window exists for one decision: something private is about to leave
+   this machine. So it is built like the room that decision belongs in — a
+   darkroom under a safelight, where private material is the only thing that
+   can be safely exposed, and where you read the manifest before you open the
+   door.
+
+   Palette from assets/logo.svg (#ea580c → #fb923c) over the tray-black the
+   README already uses. Amber is spent on exactly three things: the armed
+   action, the current selection, and the count of what was caught. Never on
+   decoration.
+   ───────────────────────────────────────────────────────────────────────── */
+:root {
+  /* One hue, lightness steps only. Each jump is a few percent — you feel the
+     layering rather than see it. */
+  --tray:      #08090b;   /* the room */
+  --bench:     #0d0f13;   /* the working surface */
+  --print:     #12151b;   /* a sheet on the bench */
+  --print-hi:  #171b23;
+  --rule:      rgba(255,255,255,0.07);
+  --rule-hi:   rgba(255,255,255,0.13);
+
+  --ink:       #e8eaed;   /* 15.1:1 on --tray */
+  --ink-2:     #a8b0bb;   /* 8.0:1  — supporting */
+  --ink-3:     #6f7883;   /* 4.6:1  — metadata, at the floor, not below it */
+
+  --safe:      #ea580c;   /* the safelight */
+  --safe-hi:   #fb923c;
+  --safe-dim:  rgba(234,88,12,0.13);
+  --fix:       #7ee787;   /* fixed, clean, nothing found */
+  --spill:     #ff7b72;
+
+  --step: 4px;
+  /* Product density: a workbench, not a brochure. */
+  --pad: 14px;
+  --ease: cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background: var(--tray);
+  color: var(--ink);
+  font: 400 14px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+        "Helvetica Neue", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ── the safelight itself: one authored moment, and the only one ─────────── */
+body::before {
+  content: "";
+  position: fixed;
+  top: -34vh; left: 50%;
+  width: 92vw; height: 62vh;
+  transform: translateX(-50%);
+  background: radial-gradient(ellipse at center,
+              rgba(234,88,12,0.14), rgba(234,88,12,0.05) 42%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+  animation: warm 14s var(--ease) infinite alternate;
+}
+@keyframes warm { from { opacity: .55; } to { opacity: 1; } }
+
+header, main, footer { position: relative; z-index: 1; }
+
+/* ── masthead ───────────────────────────────────────────────────────────── */
+header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 22px 14px;
+  border-bottom: 1px solid var(--rule);
+  background: linear-gradient(180deg, rgba(234,88,12,0.05), transparent);
+}
+.bolt { width: 22px; height: 22px; flex: none; }
+h1 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.012em;
+}
+.sub {
+  margin: 1px 0 0;
+  font-size: 12px;
+  color: var(--ink-3);
+  letter-spacing: 0.002em;
+}
+.spacer { flex: 1; }
+
+/* ── controls ───────────────────────────────────────────────────────────── */
+button, input {
+  font: inherit;
+  color: inherit;
+  border-radius: 7px;
+  transition: background 160ms var(--ease), border-color 160ms var(--ease),
+              color 160ms var(--ease), transform 110ms var(--ease);
+}
+input[type=search], input[type=text] {
+  background: var(--tray);           /* inset: darker than its surroundings */
+  border: 1px solid var(--rule);
+  padding: 8px 11px;
+  width: 100%;
+  caret-color: var(--safe-hi);
+}
+input::placeholder { color: var(--ink-3); }
+input:focus {
+  outline: none;
+  border-color: rgba(234,88,12,0.55);
+  box-shadow: 0 0 0 3px var(--safe-dim);
+}
+.btn {
+  background: var(--print-hi);
+  border: 1px solid var(--rule);
+  padding: 7px 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.btn:hover:not(:disabled) { background: #1c212a; border-color: var(--rule-hi); }
+.btn:active:not(:disabled) { transform: scale(0.97); }
+.btn:disabled { color: #4d545d; cursor: not-allowed; }
+
+/* The armed action. It is the only filled control on the page, and it is dead
+   until the manifest has been read. */
+.btn-arm {
+  background: linear-gradient(180deg, var(--safe-hi), var(--safe));
+  color: #1c0d03;
+  border: 1px solid rgba(0,0,0,0.35);
+  font-weight: 650;
+  padding: 9px 18px;
+  box-shadow: 0 1px 2px rgba(0,0,0,.5), 0 6px 18px rgba(234,88,12,.2);
+}
+.btn-arm:hover:not(:disabled) { background: linear-gradient(180deg, #fdba74, var(--safe-hi)); }
+.btn-arm:disabled {
+  background: var(--print-hi);
+  color: #4d545d;
+  border-color: var(--rule);
+  box-shadow: none;
+}
+
+/* ── the search strip ───────────────────────────────────────────────────── */
+.strip {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 22px;
+}
+.strip .field { position: relative; flex: 1; max-width: 520px; }
+.tally {
+  font-size: 12px;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ── the ledger ─────────────────────────────────────────────────────────── */
+main { flex: 1; overflow: auto; padding: 0 22px 4px; }
+table { width: 100%; border-collapse: collapse; }
+thead th {
+  position: sticky;
+  top: 0;
+  background: var(--tray);
+  text-align: left;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--rule);
+  z-index: 2;
+}
+tbody tr {
+  cursor: pointer;
+  border-bottom: 1px solid rgba(255,255,255,0.035);
+}
+tbody tr:hover { background: rgba(255,255,255,0.028); }
+tbody tr[aria-selected="true"] {
+  background: var(--safe-dim);
+  /* A 1px hairline, not a slab. */
+  box-shadow: inset 2px 0 0 var(--safe);
+}
+td { padding: 10px 12px; vertical-align: baseline; }
+.c-when  { color: var(--ink-3); font-size: 12.5px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.c-proj  { color: var(--ink-2); font-size: 12.5px; max-width: 210px;
+           overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.c-n     { color: var(--ink-3); font-size: 12.5px; text-align: right;
+           font-variant-numeric: tabular-nums; white-space: nowrap; }
+.c-said  { color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+tbody tr[aria-selected="true"] .c-said { color: #fff; }
+.tag {
+  display: inline-block;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--safe-hi);
+  background: var(--safe-dim);
+  border-radius: 999px;
+  padding: 1px 7px;
+  margin-right: 7px;
+  vertical-align: 1px;
+}
+
+/* ── the manifest: where the consequence is read ────────────────────────── */
+footer {
+  border-top: 1px solid var(--rule);
+  background: linear-gradient(180deg, var(--bench), var(--print));
+  padding: 15px 22px 17px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 16px 22px;
+  align-items: end;
+}
+.chosen-title {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin: 0 0 2px;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.chosen-title em {
+  font-style: normal;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+.chosen-said {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 74ch;
+}
+
+/* The itemised manifest. A single grey "12 secrets found" is a number nobody
+   reads; a customs list of what was pulled out is one they do. */
+.manifest { margin-top: 11px; min-height: 42px; }
+.manifest-head {
+  font-size: 12.5px;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+.manifest-head b { color: var(--ink); font-weight: 600; }
+.items { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; }
+.item {
+  font-size: 11.5px;
+  color: var(--safe-hi);
+  background: var(--safe-dim);
+  border: 1px solid rgba(234,88,12,0.22);
+  border-radius: 5px;
+  padding: 2px 8px;
+  font-variant-numeric: tabular-nums;
+  /* Entrances stagger; the delay is set inline per item. */
+  animation: rise 260ms var(--ease) both;
+}
+@keyframes rise { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+.clean { color: var(--fix); font-size: 12.5px; }
+.wait  { color: var(--ink-3); font-size: 12.5px; }
+.spilled { color: var(--spill); font-size: 12.5px; }
+
+.me { display: flex; align-items: center; gap: 7px; }
+.me-label { font-size: 11px; color: var(--ink-3); }
+.handle {
+  background: var(--safe-dim);
+  border: 1px solid rgba(234,88,12,0.3);
+  color: var(--safe-hi);
+  border-radius: 999px;
+  padding: 4px 11px;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+.handle:hover { background: rgba(234,88,12,0.2); }
+.handle:active { transform: scale(0.97); }
+
+.arm-row { display: flex; align-items: center; gap: 10px; }
+.arm-row input { width: 250px; }
+.arm-row label { font-size: 12px; color: var(--ink-3); white-space: nowrap; }
+.arm-row input { width: 190px; }
+
+/* ── empty and loading states, which teach rather than apologise ────────── */
+.state {
+  padding: 56px 22px;
+  text-align: center;
+  color: var(--ink-3);
+}
+.state h2 { margin: 0 0 6px; font-size: 15px; font-weight: 600; color: var(--ink-2); }
+.state code {
+  background: var(--print);
+  border: 1px solid var(--rule);
+  border-radius: 5px;
+  padding: 2px 7px;
+  color: var(--safe-hi);
+  font-size: 12.5px;
+}
+.skel {
+  height: 13px;
+  border-radius: 4px;
+  background: linear-gradient(90deg, var(--print), var(--print-hi), var(--print));
+  background-size: 200% 100%;
+  animation: sweep 1.25s linear infinite;
+}
+@keyframes sweep { to { background-position: -200% 0; } }
+
+/* ── the receipt ────────────────────────────────────────────────────────── */
+dialog {
+  border: 1px solid var(--rule-hi);
+  border-radius: 12px;
+  background: var(--print);
+  color: var(--ink);
+  padding: 22px;
+  max-width: 460px;
+  box-shadow: 0 20px 60px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.04);
+}
+dialog::backdrop { background: rgba(0,0,0,.62); }
+dialog h3 { margin: 0 0 8px; font-size: 15px; font-weight: 600; }
+dialog p { margin: 0 0 12px; color: var(--ink-2); font-size: 13px; }
+dialog code {
+  display: block;
+  background: var(--tray);
+  border: 1px solid var(--rule);
+  border-radius: 7px;
+  padding: 10px 12px;
+  color: var(--safe-hi);
+  font-size: 12.5px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  word-break: break-all;
+}
+
+@media (max-width: 720px) {
+  .c-proj, .c-n { display: none; }
+  footer { grid-template-columns: 1fr; }
+  .arm-row { justify-content: space-between; }
+}
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition-duration: 1ms !important; }
+}
+</style>
+</head>
+<body>
+
+<header>
+  <svg class="bolt" viewBox="0 0 480 480" aria-hidden="true">
+    <defs><linearGradient id="b" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fb923c"/><stop offset="1" stop-color="#ea580c"/>
+    </linearGradient></defs>
+    <path d="M292 88 L178 268 h58 L192 408 L336 212 h-64 L308 88 Z" fill="url(#b)"/>
+  </svg>
+  <div>
+    <h1>Release a chat</h1>
+    <p class="sub">Nothing leaves until you have read what it contains.</p>
+  </div>
+  <div class="spacer"></div>
+  <div class="me" id="me" title="your handle — give it to whoever should send you a chat">
+    <span class="me-label">you are</span>
+    <button class="handle" id="handle">…</button>
+  </div>
+  <button class="btn" id="inbox">Inbox</button>
+  <button class="btn" id="reload">Reload</button>
+</header>
+
+<div class="strip">
+  <div class="field">
+    <input type="search" id="q" placeholder="filter by project, or by what you asked…"
+           autocomplete="off" spellcheck="false">
+  </div>
+  <div class="tally" id="tally"></div>
+</div>
+
+<main id="main">
+  <div class="state" id="boot">
+    <div class="skel" style="max-width:520px;margin:0 auto 9px"></div>
+    <div class="skel" style="max-width:420px;margin:0 auto 9px"></div>
+    <div class="skel" style="max-width:470px;margin:0 auto"></div>
+  </div>
+</main>
+
+<footer>
+  <div>
+    <h2 class="chosen-title" id="title">No chat chosen</h2>
+    <p class="chosen-said" id="said">Pick one above. Choosing runs a dry pass — it writes nothing.</p>
+    <div class="manifest" id="manifest"></div>
+  </div>
+  <div class="arm-row">
+    <label for="to">send to</label>
+    <input type="text" id="to" placeholder="their handle, e.g. quiet-heron-1234"
+           autocomplete="off" spellcheck="false" list="known">
+    <datalist id="known"></datalist>
+    <button class="btn-arm" id="arm" disabled>Send</button>
+  </div>
+</footer>
+
+<dialog id="receipt">
+  <h3>Sent</h3>
+  <p id="receipt-what"></p>
+  <code id="receipt-cmd"></code>
+  <p style="margin:12px 0 0;font-size:12px;color:var(--ink-3)">
+    They collect it with <b>cml inbox</b>. Your rows arrive marked with your
+    handle, and they can drop them again with <b>cml forget --from</b>.
+  </p>
+  <div style="display:flex;justify-content:flex-end;margin-top:16px">
+    <button class="btn" id="receipt-close">Done</button>
+  </div>
+</dialog>
+
+<script>
+const K = new URLSearchParams(location.search).get('k') || '';
+const api = (p, o) => fetch(p + (p.includes('?') ? '&' : '?') + 'k=' + K, o).then(r => r.json());
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+let chats = [], chosen = null, pass = 0, me = null;
+
+async function who() {
+  try { me = await api('/api/me'); } catch { return; }
+  if (me.handle) {
+    $('handle').textContent = me.handle;
+    $('handle').title = 'click to copy — this is how people send you chats';
+  }
+  if (!me.relay) {
+    $('arm').title = 'no relay set yet';
+  }
+}
+
+$('handle').onclick = async () => {
+  if (!me || !me.handle) return;
+  try { await navigator.clipboard.writeText(me.handle); } catch {}
+  const b = $('handle'), was = b.textContent;
+  b.textContent = 'copied';
+  setTimeout(() => { b.textContent = was; }, 900);
+};
+
+async function load() {
+  $('reload').disabled = true;
+  try {
+    chats = await api('/api/chats');
+    if (chats.error) throw new Error(chats.error);
+  } catch (e) {
+    $('main').innerHTML = `<div class="state"><h2>Could not read your history</h2>
+      <p>${esc(e.message)}</p></div>`;
+    $('reload').disabled = false;
+    return;
+  }
+  $('reload').disabled = false;
+  draw();
+}
+
+function rows() {
+  const q = $('q').value.trim().toLowerCase();
+  if (!q) return chats;
+  return chats.filter(c =>
+    (c.project || '').toLowerCase().includes(q) ||
+    (c.opener || '').toLowerCase().includes(q));
+}
+
+function draw() {
+  const list = rows();
+  $('tally').textContent = list.length === chats.length
+    ? `${chats.length} chats`
+    : `${list.length} of ${chats.length}`;
+
+  if (!chats.length) {
+    $('main').innerHTML = `<div class="state">
+      <h2>Nothing indexed yet</h2>
+      <p>Run <code>cml index --all</code> once, then reload.<br>
+         It reads the history you already have on disk.</p></div>`;
+    return;
+  }
+  if (!list.length) {
+    $('main').innerHTML = `<div class="state">
+      <h2>No chat matches that</h2>
+      <p>Try a project name, an error you hit, or a filename.</p></div>`;
+    return;
+  }
+
+  $('main').innerHTML = `<table>
+    <thead><tr>
+      <th style="width:96px">when</th>
+      <th style="width:210px">project</th>
+      <th style="width:64px;text-align:right">msgs</th>
+      <th>what you asked</th>
+    </tr></thead>
+    <tbody>${list.map(c => `
+      <tr data-s="${esc(c.session)}" aria-selected="${chosen && chosen.session === c.session}">
+        <td class="c-when">${esc((c.last || '').slice(0, 10))}</td>
+        <td class="c-proj" title="${esc(c.project)}">${esc(c.project || 'misc')}</td>
+        <td class="c-n">${c.rows}</td>
+        <td class="c-said">${c.peer ? `<span class="tag">${esc(c.peer)}</span>` : ''}${
+          esc((c.opener || '— no opening message —').replace(/\s+/g, ' '))}</td>
+      </tr>`).join('')}</tbody></table>`;
+
+  for (const tr of document.querySelectorAll('tbody tr')) {
+    tr.onclick = () => choose(tr.dataset.s);
+  }
+}
+
+async function choose(session) {
+  chosen = chats.find(c => c.session === session);
+  if (!chosen) return;
+  for (const tr of document.querySelectorAll('tbody tr')) {
+    tr.setAttribute('aria-selected', tr.dataset.s === session);
+  }
+
+  $('title').innerHTML = `${esc(chosen.project || 'misc')}
+    <em>${esc((chosen.last || '').slice(0, 10))} · ${chosen.rows} messages</em>`;
+  $('said').textContent = (chosen.opener || '').replace(/\s+/g, ' ');
+  $('manifest').innerHTML = `<div class="wait">reading it…</div>`;
+  $('arm').disabled = true;
+
+  const mine = ++pass;
+  let d;
+  try {
+    d = await api('/api/dry?session=' + encodeURIComponent(session));
+  } catch (e) {
+    d = { error: String(e) };
+  }
+  if (mine !== pass) return;   // the user already moved on
+
+  if (d.error) {
+    $('manifest').innerHTML = `<div class="spilled">${esc(d.error)}</div>`;
+    return;
+  }
+
+  const head = `<div class="manifest-head"><b>${d.rows}</b> rows would leave — ` +
+               `${d.talk} messages, ${d.tool} tool records</div>`;
+  const items = (d.found || []).length
+    ? `<div class="items">${d.found.map((f, i) =>
+        `<span class="item" style="animation-delay:${i * 45}ms">${f.n} ${esc(f.what)}</span>`
+       ).join('')}</div>
+       <div class="manifest-head" style="margin-top:7px;color:var(--ink-3)">
+         stripped out before the file is written</div>`
+    : `<div class="clean" style="margin-top:6px">nothing sensitive found in it</div>`;
+
+  $('manifest').innerHTML = head + items;
+  $('arm').disabled = false;
+}
+
+$('arm').onclick = async () => {
+  if (!chosen) return;
+  const to = $('to').value.trim();
+  if (!to) { $('to').focus(); return; }
+
+  $('arm').disabled = true;
+  $('arm').textContent = 'Sending…';
+  let r;
+  try {
+    r = await api('/api/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session: chosen.session, to }),
+    });
+  } catch (e) {
+    r = { ok: false, error: String(e) };
+  }
+  $('arm').textContent = 'Send';
+  $('arm').disabled = false;
+
+  if (!r.ok) {
+    $('manifest').innerHTML = `<div class="spilled">${esc(r.error || 'could not send it')}</div>`;
+    return;
+  }
+  remember(to);
+  document.querySelector('#receipt h3').textContent = 'Sent';
+  $('receipt-what').textContent =
+    `That chat is now waiting for ${to}. Nothing else to do.`;
+  $('receipt-cmd').textContent = 'cml inbox';
+  $('receipt').showModal();
+};
+
+/* Peers you have already sent to, so the second time is a pick and not a
+   retype. localStorage, because a handle list is not memory and does not
+   belong in the index. */
+function remember(handle) {
+  const seen = JSON.parse(localStorage.getItem('cml-peers') || '[]');
+  if (!seen.includes(handle)) seen.unshift(handle);
+  localStorage.setItem('cml-peers', JSON.stringify(seen.slice(0, 12)));
+  drawKnown();
+}
+
+function drawKnown() {
+  const seen = JSON.parse(localStorage.getItem('cml-peers') || '[]');
+  $('known').innerHTML = seen.map(h => `<option value="${esc(h)}">`).join('');
+}
+
+$('inbox').onclick = async () => {
+  $('inbox').disabled = true;
+  let r;
+  try { r = await api('/api/inbox'); } catch (e) { r = { error: String(e) }; }
+  $('inbox').disabled = false;
+  document.querySelector('#receipt h3').textContent = 'Your inbox';
+  $('receipt-what').textContent = r.error ? r.error : (r.text || '').trim();
+  $('receipt-cmd').textContent = 'cml inbox --all';
+  $('receipt').showModal();
+};
+
+$('receipt-close').onclick = () => $('receipt').close();
+$('q').oninput = draw;
+$('reload').onclick = load;
+document.addEventListener('keydown', e => {
+  if (e.key === '/' && document.activeElement !== $('q')) { e.preventDefault(); $('q').focus(); }
+});
+
+drawKnown();
+who();
+load();
+</script>
+</body>
+</html>

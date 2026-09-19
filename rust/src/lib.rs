@@ -16,7 +16,9 @@
 //! A port carries the system's observable behaviour, not the shape of the code
 //! that produced it.
 
+pub mod chats;
 pub mod db;
+pub mod harness;
 pub mod lane;
 pub mod paths;
 /// Helpers shared by more than one command: noise classification, text squeezing,
@@ -30,11 +32,21 @@ pub mod text;
 pub mod distill;
 pub mod encode;
 pub mod index;
+pub mod install;
+pub mod mcp;
 pub mod offload;
+/// What running a command has cost before now — the tally behind `gate`.
+pub mod outcome;
+pub mod peer;
 pub mod recall;
+pub mod relay;
 pub mod report;
 pub mod search;
 pub mod session;
+pub mod share;
+/// Claims checked against the world before they are served.
+pub mod truth;
+pub mod ui;
 pub mod vector;
 
 /// The one error type crossing command boundaries.
@@ -70,14 +82,31 @@ pub fn command(name: &str) -> Option<(Command, &'static str)> {
         "loops" => (report::loops as Command, "asks that keep coming back unresolved"),
         "eval" => (report::eval as Command, "measure recall quality against known hits"),
         "offload" => (offload::run as Command, "spill oversized tool output to a file"),
+        "outcomes" => (outcome::run as Command, "tally what running each command has cost"),
+        "gate" => (outcome::gate as Command, "hook: warn before a command that keeps failing (PreToolUse)"),
+        "truth" => (truth::run as Command, "audit stored memory against the world"),
+        "chats" => (chats::run as Command, "list your chats, newest first, pick one by number"),
+        "share" => (share::share as Command, "export a session or project for someone else"),
+        "import" => (share::import as Command, "take in a bundle a peer shared with you"),
+        "install" => (install::install as Command, "wire cml into every agent harness here"),
+        "uninstall" => (install::uninstall as Command, "undo install, exactly and only"),
+        "harnesses" => (install::report as Command, "what is detected, and what works with it"),
+        "send" => (peer::send as Command, "send a chat straight to someone's handle"),
+        "inbox" => (peer::inbox as Command, "collect chats people sent you"),
+        "whoami" => (peer::whoami as Command, "your handle, which is how people reach you"),
+        "relay" => (peer::relay_cmd as Command, "point at a relay, or run one"),
+        "ui" => (ui::run as Command, "open the share window in your browser"),
+        "mcp" => (mcp::run as Command, "serve memory_search over MCP on stdio"),
         _ => return None,
     })
 }
 
 /// Commands in the order `help` lists them.
-pub const COMMANDS: [&str; 16] = [
+pub const COMMANDS: [&str; 31] = [
     "index", "search", "recall", "capture", "nudge", "hint", "state", "consolidate",
     "distill", "embed", "forget", "stats", "doctor", "loops", "eval", "offload",
+    "outcomes", "gate", "truth", "chats", "send", "inbox", "whoami", "relay", "share",
+    "import", "ui", "install", "uninstall", "harnesses", "mcp",
 ];
 
 #[cfg(test)]

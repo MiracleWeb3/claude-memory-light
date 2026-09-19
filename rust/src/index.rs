@@ -12,6 +12,7 @@
 
 pub mod entry;
 pub mod files;
+pub mod foreign;
 pub mod notes;
 pub mod transcripts;
 
@@ -21,35 +22,59 @@ use std::time::{Duration, Instant};
 use crate::db;
 use files::Counts;
 
-/// cml index [--all|--force]
+/// cml index [--all|--force] [--harness <id>]
 pub fn run(args: &[String]) -> crate::R<i32> {
     let force = args.iter().any(|a| a == "--all" || a == "--force");
+    let only = match args.iter().position(|a| a == "--harness") {
+        Some(i) => match args.get(i + 1) {
+            Some(name) => match crate::harness::Harness::parse(name) {
+                Some(h) => Some(h),
+                None => return Err(format!("unknown harness '{name}'").into()),
+            },
+            None => return Err("--harness needs a name".into()),
+        },
+        None => None,
+    };
     let mut conn = db::open()?;
     let budget = Budget::from_env();
     let known = files::known(&conn);
     let root = db::transcripts_dir();
 
-    let t = transcripts::index(&mut conn, &root, &known, force, &budget)?;
+    // Claude Code first: it is the largest store, and the one whose rows every
+    // other command was calibrated against. A budget that runs out should eat
+    // into the newcomers, not into the history that was already working.
+    let t = if only.is_none() {
+        transcripts::index(&mut conn, &root, &known, force, &budget)?
+    } else {
+        Counts::default()
+    };
 
     // Memory notes live beside the transcripts, one directory per project.
     let mut m = Counts::default();
-    for (dir, project) in project_dirs(&root) {
-        m += notes::index_dir(&mut conn, &known, &dir.join("memory"), "memory", &project, force)?;
+    let mut w = Counts::default();
+    if only.is_none() {
+        for (dir, project) in project_dirs(&root) {
+            m += notes::index_dir(&mut conn, &known, &dir.join("memory"), "memory", &project, force)?;
+        }
+        w = notes::index_dir(&mut conn, &known, &db::home().join("wiki"), "wiki", "wiki", force)?;
     }
-    let w = notes::index_dir(&mut conn, &known, &db::home().join("wiki"), "wiki", "wiki", force)?;
+
+    let h = foreign::index(&mut conn, &known, force, &budget, only)?;
 
     // Embedding and curation are separate commands with their own clocks; this
     // line reports only what indexing itself did.
     println!(
-        "indexed {} file(s), {} row(s)  [transcripts {}/{}, memory {}/{}, wiki {}/{}]",
-        t.files + m.files + w.files,
-        t.rows + m.rows + w.rows,
+        "indexed {} file(s), {} row(s)  [transcripts {}/{}, memory {}/{}, wiki {}/{}, harness {}/{}]",
+        t.files + m.files + w.files + h.files,
+        t.rows + m.rows + w.rows + h.rows,
         t.files,
         t.rows,
         m.files,
         m.rows,
         w.files,
-        w.rows
+        w.rows,
+        h.files,
+        h.rows
     );
     Ok(0)
 }

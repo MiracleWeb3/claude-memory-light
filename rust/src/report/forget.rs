@@ -87,6 +87,37 @@ pub fn forget(args: &[String]) -> crate::R<i32> {
         return Ok(0);
     }
 
+    // `--from <peer>` undoes an import. It is a different operation from
+    // forgetting your own row: nothing is blocklisted, because these rows will
+    // not come back on their own — the transcript that made them is on someone
+    // else's machine. This is the "remove it again in one command" half of the
+    // promise `cml import` makes.
+    if let Some(peer) = crate::share::flag(args, "--from") {
+        let mut removed = 0usize;
+        let files: Vec<String> = {
+            let mut st = conn.prepare("SELECT file FROM origin WHERE peer = ?1")?;
+            let rows = st.query_map([&peer], |r| r.get::<_, String>(0))?;
+            rows.flatten().collect()
+        };
+        if files.is_empty() {
+            println!("nothing imported from '{peer}'");
+            return Ok(0);
+        }
+        for file in &files {
+            for lane in [Lane::Conversation, Lane::Tools] {
+                removed += conn.execute(
+                    &format!("DELETE FROM {} WHERE file = ?1", lane.table()),
+                    [file],
+                )?;
+            }
+            crate::index::files::drop_rows_for_file(&conn, file)?;
+            conn.execute("DELETE FROM files WHERE path = ?1", [file])?;
+        }
+        conn.execute("DELETE FROM origin WHERE peer = ?1", [&peer])?;
+        println!("removed {removed} row(s) imported from '{peer}'");
+        return Ok(0);
+    }
+
     let ids = match args.iter().position(|a| a == "--match") {
         Some(at) => {
             let Some(raw) = args.get(at + 1) else {

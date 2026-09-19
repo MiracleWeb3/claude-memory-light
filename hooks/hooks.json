@@ -49,6 +49,18 @@
           }
         ]
       }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/cml-run\" gate",
+            "timeout": 5
+          }
+        ]
+      }
     ]
   }
 }

@@ -3,6 +3,12 @@
 use std::process::ExitCode;
 
 fn main() -> ExitCode {
+    // `cml search x | head -3` closes the pipe after three lines, and Rust's
+    // default SIGPIPE handling turns the next println into a panic with a
+    // backtrace. Every command here is one a user pipes, and a memory tool that
+    // panics into a `head` is a memory tool people stop piping.
+    restore_sigpipe();
+
     let args: Vec<String> = std::env::args().skip(1).collect();
 
     let Some(name) = args.first() else {
@@ -32,6 +38,30 @@ fn main() -> ExitCode {
             ExitCode::from(1)
         }
     }
+}
+
+/// Make a closed stdout a quiet exit rather than a panic.
+///
+/// The usual fix is `signal(SIGPIPE, SIG_DFL)`, which needs `libc` and an
+/// `unsafe` block — and this crate forbids `unsafe_code` at the manifest, on
+/// purpose. A panic hook reaches the same observable behaviour in safe code:
+/// the only panic a broken pipe can produce is the one `std` raises from its
+/// own print machinery, and that one is recognisable by its message.
+fn restore_sigpipe() {
+    let default = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let msg = info
+            .payload()
+            .downcast_ref::<String>()
+            .map(String::as_str)
+            .or_else(|| info.payload().downcast_ref::<&str>().copied())
+            .unwrap_or_default();
+        if msg.contains("Broken pipe") {
+            // What a program killed by SIGPIPE looks like from the shell.
+            std::process::exit(141);
+        }
+        default(info);
+    }));
 }
 
 /// Generated from the command registry, so it cannot describe a command that no

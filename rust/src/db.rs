@@ -105,6 +105,29 @@ CREATE TABLE IF NOT EXISTS forgotten(key TEXT PRIMARY KEY);
 CREATE TABLE IF NOT EXISTS hints(session TEXT, category TEXT, PRIMARY KEY(session, category));
 CREATE TABLE IF NOT EXISTS recalled(session TEXT, key TEXT, PRIMARY KEY(session, key));
 
+-- Where a row came from: which harness wrote it, and which person, if not you.
+--
+-- A sidecar table rather than a column, because `mem` and `work` are FTS5
+-- virtual tables and those do not take ALTER TABLE ADD COLUMN. Keying it by
+-- `file` rather than by rowid is what makes it survive the delete-then-insert
+-- that re-indexing performs: FTS5 hands rowids back out after a delete, so a
+-- rowid-keyed origin would eventually attribute a stranger's row to you.
+--
+-- Absent from this table means what the index has always meant: a Claude Code
+-- transcript of your own. That is why the 208 MB index already on this machine
+-- needs no migration at all.
+CREATE TABLE IF NOT EXISTS origin(
+    file TEXT PRIMARY KEY, harness TEXT NOT NULL, peer TEXT);
+
+-- What running a command has cost, tallied per normalized signature.
+--
+-- A plain table, not FTS5: the lookup is an exact match on a signature the caller
+-- computes, never a search. Rebuilt wholesale by `cml outcomes` rather than kept
+-- incrementally — the whole pass over 1,214 transcripts is one read of files that
+-- are already on disk, and a wrong tally is worse than a stale one.
+CREATE TABLE IF NOT EXISTS outcome(
+    sig TEXT PRIMARY KEY, tries INTEGER NOT NULL, fails INTEGER NOT NULL, sample TEXT);
+
 -- Embeddings as a plain BLOB of little-endian f32, not a vec0 virtual table.
 -- sqlite-vec was 324K of vendored C and an unsafe extension load; 5,576 x 256
 -- floats is 5.7 MB, and a rayon cosine sweep over it is faster than the query

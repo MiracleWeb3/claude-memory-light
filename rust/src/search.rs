@@ -127,6 +127,9 @@ struct Hit {
     project: String,
     session: String,
     snippet: String,
+    /// The person this row came from, when it was not you. `None` is your own
+    /// history, which is the overwhelming majority and therefore unmarked.
+    peer: Option<String>,
 }
 
 impl Hit {
@@ -135,16 +138,38 @@ impl Hit {
     /// The lane label takes the column the C++ gave to the row role. In a merged
     /// list, which corpus a line came from is the fact that makes it readable;
     /// the role is recoverable with `--role`.
+    ///
+    /// An imported row gets `[peer]` in front of its text. Without it a
+    /// stranger's conclusion about a different codebase is indistinguishable
+    /// from your own, which is the failure mode that would make sharing a
+    /// downgrade rather than a feature.
     fn line(&self) -> String {
+        let body = match &self.peer {
+            Some(p) => format!("[{p}] {}", self.snippet),
+            None => self.snippet.clone(),
+        };
         format!(
             "{:<10}  {:<5}  {:<14}  {:<8} | {}",
             self.date,
             self.lane.label(),
             self.project,
             self.session,
-            self.snippet
+            body
         )
     }
+}
+
+/// `file` -> peer, for every imported bundle. One query for the whole search:
+/// `origin` holds one row per shared file, not per row, so this is tiny.
+fn peers(conn: &Connection) -> std::collections::HashMap<String, String> {
+    let mut out = std::collections::HashMap::new();
+    let Ok(mut st) = conn.prepare("SELECT file, peer FROM origin WHERE peer IS NOT NULL") else {
+        return out;
+    };
+    if let Ok(rows) = st.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))) {
+        out.extend(rows.flatten());
+    }
+    out
 }
 
 /// Rank every requested lane, merge, filter, and cut to `limit`.
@@ -200,6 +225,7 @@ fn search(conn: &Connection, o: &Opts<'_>) -> R<Vec<Hit>> {
     // One map for the whole search, not a lookup per row: `distilled` is small and
     // this is the shared reader every other command already uses.
     let gists = crate::text::gist_lookup(conn);
+    let by_peer = peers(conn);
 
     // Not `with_capacity(limit)`: `--limit 4000000000` would then allocate for four
     // billion hits before reading a row.
@@ -212,12 +238,12 @@ fn search(conn: &Connection, o: &Opts<'_>) -> R<Vec<Hit>> {
         let row = conn
             .prepare_cached(&fetch_sql[li])?
             .query_row(params![rowid], |r| {
-                Ok((col(r, 0)?, col(r, 1)?, col(r, 2)?, col(r, 3)?, col(r, 4)?))
+                Ok((col(r, 0)?, col(r, 1)?, col(r, 2)?, col(r, 3)?, col(r, 4)?, col(r, 5)?))
             })
             .optional()?;
         // A rowid that vanished between ranking and fetching (a concurrent
         // `cml forget`) is skipped, not an error.
-        let Some((body, second, project, session, ts)) = row else { continue };
+        let Some((body, second, project, session, ts, file)) = row else { continue };
 
         if !want_project.is_empty() && !project.to_lowercase().contains(&want_project) {
             continue;
@@ -261,6 +287,7 @@ fn search(conn: &Connection, o: &Opts<'_>) -> R<Vec<Hit>> {
             project,
             session: session.chars().take(8).collect(),
             snippet,
+            peer: by_peer.get(&file).cloned(),
         });
     }
     Ok(out)
@@ -393,6 +420,21 @@ pub fn run(args: &[String]) -> R<i32> {
         );
     }
     Ok(0)
+}
+
+/// The same search, handed back instead of printed.
+///
+/// `cml mcp` needs the rows, not the side effect. Exposing this rather than
+/// letting the MCP server build its own query is what keeps the tool and the
+/// CLI from ever disagreeing about what the index holds.
+pub fn lines(args: &[String]) -> R<Vec<String>> {
+    let opts = parse(args)?;
+    if opts.terms.is_empty() {
+        return Ok(Vec::new());
+    }
+    let conn = crate::db::open_ro()
+        .map_err(|e| format!("cannot open the index ({e}) — run `cml index` first"))?;
+    Ok(search(&conn, &opts)?.iter().map(Hit::line).collect())
 }
 
 #[cfg(test)]

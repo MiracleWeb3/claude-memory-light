@@ -41,11 +41,15 @@ use super::Budget;
 /// "ok done", "522556") are never how anyone finds anything, and the reply that
 /// follows carries the answer and is kept anyway.
 /// ponytail: word count, not semantics — drop to 2 if real messages start vanishing.
-const USER_MIN_WORDS: usize = 4;
-const ASSISTANT_MIN_CHARS: usize = 80;
-const MIN_CHARS: usize = 4;
+///
+/// `pub(super)` so `foreign.rs` judges a jcode or opencode row by the identical
+/// floors. Two copies of these numbers is how one lane silently starts keeping
+/// text the other throws away.
+pub(super) const USER_MIN_WORDS: usize = 4;
+pub(super) const ASSISTANT_MIN_CHARS: usize = 80;
+pub(super) const MIN_CHARS: usize = 4;
 /// Bytes, matching the C++ `std::string::size()` this floor was calibrated against.
-const TOOL_MIN: usize = 40;
+pub(super) const TOOL_MIN: usize = 40;
 
 /// Files per transaction. Parsing is parallel and writing is not, so this is the
 /// unit of resumability: a budget that runs out costs at most this many files of

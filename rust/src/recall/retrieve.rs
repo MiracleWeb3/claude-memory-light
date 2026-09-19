@@ -186,6 +186,11 @@ pub fn retrieve(
 
     let prompt_flat = squeeze(&prompt.to_ascii_lowercase(), 400);
     let gists = gist_lookup(conn);
+    // Resolved once for the whole retrieval rather than per row: `PATH` does not
+    // change mid-hook, and a hook that stats the same directories ten times over
+    // is a tax on every prompt.
+    let home = crate::paths::home_dir();
+    let path_dirs = crate::truth::path_dirs();
     // Fetch from the SAME table the ranking came from. This read was pinned to `mem`
     // while the work lane ranked against `work`, so every tool rowid was looked up in
     // the wrong table and silently produced nothing — the lane was wired end to end and
@@ -234,9 +239,34 @@ pub fn retrieve(
         } else {
             format!("/{project}")
         };
+
+        // Ask the world before repeating what we were told. Measured on this
+        // machine: 23% of the checkable claims in memory are false, and the
+        // retrieval layer served every one of them as fact because nothing ever
+        // checked. A row whose claims are ALL refuted is about something that no
+        // longer exists — withheld, not ranked. A row that is partly refuted still
+        // carries its true half, so it goes out wearing the refutation.
+        // The row arrives as `substr(text,1,400)`, so its last token is usually a
+        // word cut in half — and a halved path (`/home/user/m`) is a claim
+        // about a file that was never asserted. Drop the final token before
+        // judging: the alternative is convicting the truncation.
+        let checked = match body.rfind(char::is_whitespace) {
+            Some(i) => &body[..i],
+            None => body.as_str(),
+        };
+        let verdict = crate::truth::audit(checked, &home, &path_dirs);
+        if verdict.checked > 0 && verdict.refuted.len() == verdict.checked {
+            continue;
+        }
+        let stale = if verdict.rotten() {
+            format!(" [gone: {}]", verdict.refuted.join(", "))
+        } else {
+            String::new()
+        };
+
         out.push(Hit {
             rowid,
-            line: format!("{} {role}{where_}: {}", day(&ts), squeeze(body, SNIPPET)),
+            line: format!("{} {role}{where_}: {}{stale}", day(&ts), squeeze(body, SNIPPET)),
             key,
         });
     }
